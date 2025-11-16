@@ -2347,6 +2347,7 @@ subdir('src/cryptenroll')
 subdir('src/cryptsetup')
 subdir('src/debug-generator')
 subdir('src/delta')
+subdir('src/delta-pull')
 subdir('src/detect-virt')
 subdir('src/dissect')
 subdir('src/environment-d-generator')
@@ -2492,7 +2493,7 @@ foreach dict : executables
         foreach key, val : dict
                 if key in ['name', 'dbus', 'public', 'conditions',
                            'type', 'suite', 'timeout', 'parallel',
-                           'objects', 'extract']
+                           'objects', 'extract', 'structured']
                         continue
                 endif
 
@@ -2535,7 +2536,7 @@ foreach dict : executables
 
         executables_by_name += { name : exe }
 
-        if not name.endswith('.standalone')
+        if not name.endswith('.standalone') and not dict.get('structured', false)
                 sources += dict.get('sources', [])
         endif
 

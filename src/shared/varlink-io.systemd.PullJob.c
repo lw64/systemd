@@ -14,11 +14,11 @@ static SD_VARLINK_DEFINE_STRUCT_TYPE(
                 SD_VARLINK_DEFINE_FIELD(location, SD_VARLINK_STRING, 0));
 
 static SD_VARLINK_DEFINE_METHOD(
-                PullRaw,
+                PullFile,
                 SD_VARLINK_FIELD_COMMENT("URL to download from"),
                 SD_VARLINK_DEFINE_INPUT(source, SD_VARLINK_STRING, 0),
                 SD_VARLINK_FIELD_COMMENT("Destination for download"),
-                SD_VARLINK_DEFINE_INPUT(destinationFileDescriptor, SD_VARLINK_INT, SD_VARLINK_NULLABLE),
+                SD_VARLINK_DEFINE_INPUT(destinationFileDescriptor, SD_VARLINK_INT, 0),
                 SD_VARLINK_FIELD_COMMENT("Instances to reuse data from for delta-updating"),
                 SD_VARLINK_DEFINE_INPUT_BY_TYPE(instances, PullInstance, SD_VARLINK_ARRAY|SD_VARLINK_NULLABLE),
                 SD_VARLINK_FIELD_COMMENT("Start offset for data in destination"),
@@ -36,7 +36,7 @@ SD_VARLINK_DEFINE_INTERFACE(
                 SD_VARLINK_SYMBOL_COMMENT("Instances to reuse data from for delta-updating"),
                 &vl_type_PullInstance,
                 SD_VARLINK_SYMBOL_COMMENT("Download from a URL into your system"),
-                &vl_method_PullRaw,
+                &vl_method_PullFile,
                 SD_VARLINK_SYMBOL_COMMENT("A parameter is invalid"),
                 &vl_error_InvalidParameters,
                 SD_VARLINK_SYMBOL_COMMENT("An error occured while pulling the data"),

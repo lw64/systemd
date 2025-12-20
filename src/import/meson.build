@@ -41,6 +41,20 @@ executables += [
                 ],
         },
         libexec_template + {
+                'name' : 'systemd-pull-job-varlink',
+                'public' : true,
+                'sources' : files(
+                        'pull-job-service.c',
+                        'pull-job.c',
+                        'curl-util.c',
+                ),
+                'objects' : ['systemd-importd'],
+                'link_with' : [libcurlutil_static, libshared],
+                'dependencies' : common_deps + [
+                        libopenssl,
+                ],
+        },
+        libexec_template + {
                 'name' : 'systemd-import',
                 'public' : true,
                 'sources' : files(

@@ -24,7 +24,8 @@ static SD_VARLINK_DEFINE_METHOD(
                 SD_VARLINK_FIELD_COMMENT("Start offset for data in destination"),
                 SD_VARLINK_DEFINE_INPUT(offset, SD_VARLINK_INT, SD_VARLINK_NULLABLE),
                 SD_VARLINK_FIELD_COMMENT("Maximum size of written data"),
-                SD_VARLINK_DEFINE_INPUT(maxSize, SD_VARLINK_INT, SD_VARLINK_NULLABLE));
+                SD_VARLINK_DEFINE_INPUT(maxSize, SD_VARLINK_INT, SD_VARLINK_NULLABLE),
+                SD_VARLINK_DEFINE_INPUT(expectedChecksum, SD_VARLINK_STRING, SD_VARLINK_NULLABLE));
 
 static SD_VARLINK_DEFINE_ERROR(InvalidParameters);
 static SD_VARLINK_DEFINE_ERROR(PullError);

@@ -625,14 +625,6 @@ int transfer_read_definition(Transfer *t, const char *path, const char **dirs, H
                         if (!path_is_absolute(t->source.path) || !path_is_normalized(t->source.path))
                                 return log_syntax(NULL, LOG_ERR, path, 1, SYNTHETIC_ERRNO(EINVAL),
                                                   "Source path is not a normalized, absolute path: %s", t->source.path);
-
-                /* We unofficially support file:// in addition to http:// and https:// for url
-                 * sources. That's mostly for testing, since it relieves us from having to set up a HTTP
-                 * server, and CURL abstracts this away from us thankfully. */
-                if (RESOURCE_IS_URL(t->source.type))
-                        if (!http_url_is_valid(t->source.path) && !file_url_is_valid(t->source.path))
-                                return log_syntax(NULL, LOG_ERR, path, 1, SYNTHETIC_ERRNO(EINVAL),
-                                                  "Source path is not a valid HTTP or HTTPS URL: %s", t->source.path);
         }
 
         if (strv_isempty(t->source.patterns))

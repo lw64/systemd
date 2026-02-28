@@ -87,6 +87,7 @@ typedef struct PullJob {
         bool force_memory;
 
         char *authentication_challenge;
+        bool header_only;
 } PullJob;
 
 int pull_job_new(PullJob **ret, const char *url, CurlGlue *glue, void *userdata);

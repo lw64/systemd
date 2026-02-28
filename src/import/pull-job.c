@@ -650,7 +650,11 @@ static size_t pull_job_header_callback(void *contents, size_t size, size_t nmemb
                                 goto fail;
                         }
 
-                        log_info("Downloading %s for %s.", FORMAT_BYTES(j->content_length), pull_job_description(j));
+                        if (j->header_only) {
+                                log_info("Size of %s is %s.", j->url, FORMAT_BYTES(j->content_length));
+                                pull_job_finish (j, 0);
+                        } else
+                                log_info("Downloading %s for %s.", FORMAT_BYTES(j->content_length), pull_job_description(j));
                 }
 
                 return sz;
@@ -763,6 +767,7 @@ int pull_job_new(
                 .offset = UINT64_MAX,
                 .sync = true,
                 .expected_content_length = UINT64_MAX,
+                .header_only = false,
         };
 
         *ret = TAKE_PTR(j);
@@ -825,22 +830,24 @@ int pull_job_begin(PullJob *j) {
                         return -EIO;
         }
 
-        if (sym_curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, pull_job_write_callback) != CURLE_OK)
-                return -EIO;
+        if (!j->header_only) {
+                if (sym_curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, pull_job_write_callback) != CURLE_OK)
+                        return -EIO;
 
-        if (sym_curl_easy_setopt(easy, CURLOPT_WRITEDATA, j) != CURLE_OK)
-                return -EIO;
+                if (sym_curl_easy_setopt(easy, CURLOPT_WRITEDATA, j) != CURLE_OK)
+                        return -EIO;
+
+                if (sym_curl_easy_setopt(easy, CURLOPT_XFERINFOFUNCTION, pull_job_progress_callback) != CURLE_OK)
+                        return -EIO;
+
+                if (sym_curl_easy_setopt(easy, CURLOPT_XFERINFODATA, j) != CURLE_OK)
+                        return -EIO;
+        }
 
         if (sym_curl_easy_setopt(easy, CURLOPT_HEADERFUNCTION, pull_job_header_callback) != CURLE_OK)
                 return -EIO;
 
         if (sym_curl_easy_setopt(easy, CURLOPT_HEADERDATA, j) != CURLE_OK)
-                return -EIO;
-
-        if (sym_curl_easy_setopt(easy, CURLOPT_XFERINFOFUNCTION, pull_job_progress_callback) != CURLE_OK)
-                return -EIO;
-
-        if (sym_curl_easy_setopt(easy, CURLOPT_XFERINFODATA, j) != CURLE_OK)
                 return -EIO;
 
         if (sym_curl_easy_setopt(easy, CURLOPT_NOPROGRESS, 0L) != CURLE_OK)

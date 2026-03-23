@@ -17,7 +17,7 @@ static SD_VARLINK_DEFINE_METHOD(
                 SD_VARLINK_FIELD_COMMENT("URL path to update from"),
                 SD_VARLINK_DEFINE_INPUT(source, SD_VARLINK_STRING, 0),
                 SD_VARLINK_FIELD_COMMENT("available instances"),
-                SD_VARLINK_DEFINE_OUTPUT(size, SD_VARLINK_STRING, SD_VARLINK_ARRAY),
+                SD_VARLINK_DEFINE_OUTPUT(instances, SD_VARLINK_STRING, SD_VARLINK_ARRAY),
                 SD_VARLINK_FIELD_COMMENT("cached blob"),
                 SD_VARLINK_DEFINE_OUTPUT(blob, SD_VARLINK_STRING, 0));
 

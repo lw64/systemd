@@ -2,19 +2,29 @@
 
 #include <locale.h>
 
+#include "alloc-util.h"
+#include "build-path.h"
 #include "curl-util.h"
 #include "fd-util.h"
-#include "json-util.h"
+#include "glyph-util.h"
+#include "hash-funcs.h"
+#include "hexdecoct.h"
 #include "io-util.h"
 #include "import-common.h"
-#include "hexdecoct.h"
+#include "import-util.h"
+#include "json-util.h"
 #include "log.h"
 #include "main-func.h"
+#include "memfd-util.h"
+#include "path-util.h"
+#include "process-util.h"
 #include "pull-job.h"
 #include "sd-event.h"
 #include "set.h"
-#include "strv.h"
 #include "signal-util.h"
+#include "strv.h"
+#include "sysupdate-instance.h"
+#include "utf8.h"
 #include "varlink-io.systemd.Updater.h"
 #include "varlink-util.h"
 #include "web-util.h"
@@ -24,7 +34,7 @@ typedef struct LocalInstance {
         int fd;
         uint64_t offset;
         uint64_t size_max;
-}
+} LocalInstance;
 
 static LocalInstance* local_instance_free(LocalInstance *i) {
         if (!i)
@@ -42,6 +52,7 @@ DEFINE_PRIVATE_HASH_OPS_WITH_VALUE_DESTRUCTOR(
         trivial_compare_func,
         LocalInstance,
         local_instance_free);
+_SD_DEFINE_POINTER_CLEANUP_FUNC(LocalInstance, local_instance_free);
 
 static int dispatch_local_instance(const char *name, sd_json_variant *variant, sd_json_dispatch_flags_t flags, void *userdata) {
         static const sd_json_dispatch_field local_instance_dispatch_table[] = {
@@ -49,7 +60,7 @@ static int dispatch_local_instance(const char *name, sd_json_variant *variant, s
                 { "offset",                 SD_JSON_VARIANT_NUMBER,        sd_json_dispatch_uint64, offsetof(LocalInstance, offset),   0 },
                 { "maxSize",                SD_JSON_VARIANT_NUMBER,        sd_json_dispatch_uint64, offsetof(LocalInstance, size_max), 0 },
                 {},
-        }
+        };
 
         LocalInstance **ret = ASSERT_PTR(userdata);
         _cleanup_(local_instance_freep) LocalInstance *i = NULL;
@@ -184,7 +195,8 @@ static int download_manifest(
 // a lot copied from resource_load_from_web from sysupdate-resource.c
 static int parse_manifest_instances(
                 char ***ret,
-                char *manifest,
+                char ***ret_digests,
+                const char *manifest,
                 size_t manifest_size) {
 
         size_t left = 0;
@@ -203,14 +215,13 @@ static int parse_manifest_instances(
         p = manifest;
         left = manifest_size;
 
-        _cleanup_strv_free_ char **available_instances = NULL;
+        _cleanup_strv_free_ char **available_instances = NULL, **digests = NULL;
 
         while (left > 0) {
                 _cleanup_(instance_metadata_destroy) InstanceMetadata extracted_fields = INSTANCE_METADATA_NULL;
-                _cleanup_free_ char *fn = NULL;
+                _cleanup_free_ char *fn = NULL, *digest = NULL;
                 _cleanup_free_ void *h = NULL;
-                Instance *instance;
-                const char *e;
+                const char *e, *d;
                 size_t hlen;
 
                 /* 64 character hash + separator + filename + newline */
@@ -220,6 +231,7 @@ static int parse_manifest_instances(
                 if (p[0] == '\\')
                         return log_error_errno(SYNTHETIC_ERRNO(EOPNOTSUPP), "File names with escapes not supported in manifest at line %zu, refusing.", line_nr);
 
+                d = p;
                 r = unhexmem_full(p, 64, /* secure = */ false, &h, &hlen);
                 if (r < 0)
                         return log_error_errno(r, "Failed to parse digest at manifest line %zu, refusing.", line_nr);
@@ -249,6 +261,16 @@ static int parse_manifest_instances(
                 if (string_has_cc(fn, NULL))
                         return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Filename contains control characters at manifest line %zu, refusing.", line_nr);
 
+                if (ret_digests) {
+                        digest = strndup(d, 64);
+                        if (!digest)
+                                return log_oom();
+
+                        r = strv_consume(&digests, digest);
+                        if (r < 0)
+                                return log_oom();
+                }
+
                 r = strv_consume(&available_instances, fn);
                 if (r < 0)
                         return log_oom();
@@ -260,7 +282,25 @@ static int parse_manifest_instances(
         }
 
         *ret = TAKE_PTR(available_instances);
+        *ret_digests = TAKE_PTR(digests);
         return 0;
+}
+
+static int instances_find_digest(
+        char **ret_checksum,
+        const char *resource,
+        char **instances,
+        char **digests) {
+
+        int i = 0;
+        STRV_FOREACH(inst, instances) {
+                if (streq(*inst, resource)) {
+                        *ret_checksum = strdup(digests[i]);
+                        return 0;
+                }
+                i++;
+        }
+        return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Requested instance '%s' is not available for updating", resource);
 }
 
 typedef struct ListInstancesParameters {
@@ -291,7 +331,7 @@ static int vl_method_list_instances(sd_varlink *link, sd_json_variant *json_para
                 return r;
 
         if (!http_url_is_valid(p.source) && !file_url_is_valid(p.source))
-                return sd_varlink_error_invalid_parameter(link, "source is not a valid url");
+                return sd_varlink_error_invalid_parameter_name(link, "source");
 
         _cleanup_free_ char *manifest;
         size_t manifest_size;
@@ -300,15 +340,38 @@ static int vl_method_list_instances(sd_varlink *link, sd_json_variant *json_para
                 return sd_varlink_error_errno(link, r);
 
         _cleanup_strv_free_ char **instances;
-        r = parse_manifest_instances(&instances, manifest, manifest_size);
+        r = parse_manifest_instances(&instances, NULL, manifest, manifest_size);
+        if (r < 0)
+                return sd_varlink_error_errno(link, r);
 
         return sd_varlink_replybo(link,
                                   SD_JSON_BUILD_PAIR_STRV("instances", instances),
                                   SD_JSON_BUILD_PAIR_STRING("blob", manifest));
 }
 
+// copied from import/pull-worker-varlink.c
+static int url_get_protocol(const char *url, const char **protocol) {
+        const char *d;
+        size_t length;
+
+        assert(url);
+        assert(protocol);
+
+        /* Find colon separating protocol and hostname */
+        d = strchr(url, ':');
+        if (!d || url == d)
+                return -EINVAL;
+
+        length = d - url;
+
+        *protocol = strndup(url, length);
+        if (!*protocol)
+                return -ENOMEM;
+        return 0;
+}
+
 // mostly copied from pull_file_job_begin from pull-worker-varlink.c
-int pull_file_job_begin(const char *url, const char *resource, const char *expected_checksum, LocalInstance *output, char **ret_checksum) {
+static int pull_file_job_begin(const char *url, const char *resource, const char *expected_checksum, LocalInstance *output, char **ret_checksum) {
         int r;
 
         assert(url);
@@ -327,7 +390,7 @@ int pull_file_job_begin(const char *url, const char *resource, const char *expec
                 return log_error_errno(r, "Failed to append resource '%s' to URL: %m", resource);
 
         _cleanup_(sd_varlink_flush_close_unrefp) sd_varlink *vl;
-        r = sd_varlink_connect_address(vl, path_join(SYSTEMD_PULL_WORKER_DIRECTORY_PATH, protocol));
+        r = sd_varlink_connect_address(&vl, path_join(SYSTEMD_PULL_WORKER_DIRECTORY_PATH, protocol));
         if (r < 0)
                 return log_error_errno(r, "Failed to connect to systemd-pull '%s' backend: %m", protocol);
 
@@ -339,14 +402,12 @@ int pull_file_job_begin(const char *url, const char *resource, const char *expec
         if (destination_fd_index < 0)
                 return log_error_errno(destination_fd_index, "Failed to push destination fd into varlink socket: %m");
 
-        const char *error_id = NULL;
         sd_json_variant *reply = NULL, *d = NULL;
         r = varlink_callbo_and_log(
                 vl,
-                &reply,
-                &error_id,
                 "io.systemd.PullJob.PullFile",
-                SD_JSON_BUILD_PAIR_CONDITION(expected_checksum, "expectedChecksum", SD_JSON_BUILD_STRING (expected_checksum)),
+                &reply,
+                SD_JSON_BUILD_PAIR_CONDITION(expected_checksum != NULL, "expectedChecksum", SD_JSON_BUILD_STRING (expected_checksum)),
                 SD_JSON_BUILD_PAIR_STRING("source", suffixed_url),
                 SD_JSON_BUILD_PAIR_UNSIGNED("destinationFileDescriptor", destination_fd_index),
                 SD_JSON_BUILD_PAIR_CONDITION(FILE_SIZE_VALID(output->offset), "offset", SD_JSON_BUILD_UNSIGNED(output->offset)),
@@ -371,7 +432,7 @@ int pull_file_job_begin(const char *url, const char *resource, const char *expec
 }
 
 // mostly copied from pull_file_job_begin from pull-worker-varlink.c
-int pull_file_job_begin_prepare(const char *url, const char *resource, int *ret_size) {
+static int pull_file_job_begin_prepare(const char *url, const char *resource, int *ret_size) {
         int r;
 
         assert(url);
@@ -389,25 +450,15 @@ int pull_file_job_begin_prepare(const char *url, const char *resource, int *ret_
                 return log_error_errno(r, "Failed to append resource '%s' to URL: %m", resource);
 
         _cleanup_(sd_varlink_flush_close_unrefp) sd_varlink *vl;
-        r = sd_varlink_connect_address(vl, path_join(SYSTEMD_PULL_WORKER_DIRECTORY_PATH, protocol));
+        r = sd_varlink_connect_address(&vl, path_join(SYSTEMD_PULL_WORKER_DIRECTORY_PATH, protocol));
         if (r < 0)
                 return log_error_errno(r, "Failed to connect to systemd-pull '%s' backend: %m", protocol);
 
-        r = sd_varlink_set_allow_fd_passing_output(vl, true);
-        if (r < 0)
-                return log_debug_errno(r, "Failed to enable varlink fd passing for write: %m");
-
-        int destination_fd_index = sd_varlink_push_dup_fd(vl, output->fd);
-        if (destination_fd_index < 0)
-                return log_error_errno(destination_fd_index, "Failed to push destination fd into varlink socket: %m");
-
-        const char *error_id = NULL;
         sd_json_variant *reply = NULL, *d = NULL;
         r = varlink_callbo_and_log(
                 vl,
-                &reply,
-                &error_id,
                 "io.systemd.PullJob.PreparePull",
+                &reply,
                 SD_JSON_BUILD_PAIR_STRING("source", suffixed_url));
         if (r < 0)
                 return r;
@@ -417,11 +468,11 @@ int pull_file_job_begin_prepare(const char *url, const char *resource, int *ret_
                 return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
                                        "PullFile() response is missing 'size' key.");
 
-        if (!sd_json_variant_is_int(d))
+        if (!sd_json_variant_is_integer(d))
                 return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
                                        "PullFile() response 'size' field not an integer");
 
-        *ret_size = sd_json_variant_int(d);
+        *ret_size = sd_json_variant_integer(d);
         return 0;
 }
 
@@ -444,11 +495,11 @@ static int vl_method_prepare_update(sd_varlink *link, sd_json_variant *json_para
                 { "source",   SD_JSON_VARIANT_STRING, sd_json_dispatch_const_string, offsetof(PrepareUpdateParameters, source),   SD_JSON_MANDATORY },
                 { "resource", SD_JSON_VARIANT_STRING, sd_json_dispatch_const_string, offsetof(PrepareUpdateParameters, resource), SD_JSON_MANDATORY },
                 { "blob",     SD_JSON_VARIANT_STRING, sd_json_dispatch_const_string, offsetof(PrepareUpdateParameters, blob),     SD_JSON_MANDATORY },
-                { "output",   SD_JSON_VARIANT_OBJECT, json_dispatch_local_instance,  offsetof(PrepareUpdateParameters, output),   SD_JSON_MANDATORY },
+                { "output",   SD_JSON_VARIANT_OBJECT, dispatch_local_instance,  offsetof(PrepareUpdateParameters, output),   SD_JSON_MANDATORY },
                 {}
         };
 
-        _cleanup_(method_prepare_update_parameters_done) PrepareUpdateParameters p;
+        _cleanup_(prepare_update_parameters_done) PrepareUpdateParameters p;
         int r;
 
         assert(link);
@@ -458,7 +509,7 @@ static int vl_method_prepare_update(sd_varlink *link, sd_json_variant *json_para
                 return r;
 
         if (!http_url_is_valid(p.source) && !file_url_is_valid(p.source))
-                return sd_varlink_error_invalid_parameter(link, "source is not a valid url");
+                return sd_varlink_error_invalid_parameter_name(link, "source");
 
         int size = 0;
         r = pull_file_job_begin_prepare(p.source, p.resource, &size);
@@ -483,22 +534,22 @@ typedef struct UpdateParameters {
 } UpdateParameters;
 
 static void update_parameters_done(UpdateParameters *p) {
-        local_instance_donep (&p->output);
+        local_instance_freep(&p->output);
         sd_event_unref(p->event);
 }
 
 static int vl_method_update(sd_varlink *link, sd_json_variant *json_parameters, sd_varlink_method_flags_t flags, void *userdata) {
 
         static const sd_json_dispatch_field dispatch_table[] = {
-                { "source",           SD_JSON_VARIANT_STRING, sd_json_dispatch_const_string, offsetof(PullParameters, source),          SD_JSON_MANDATORY },
-                { "resource",         SD_JSON_VARIANT_STRING, sd_json_dispatch_const_string, offsetof(PullParameters, resource),        SD_JSON_MANDATORY },
-                { "enhancedBlob",     SD_JSON_VARIANT_STRING, sd_json_dispatch_const_string, offsetof(PullParameters, enhanced_blob),   SD_JSON_MANDATORY },
-                { "output",           SD_JSON_VARIANT_OBJECT, json_dispatch_local_instance,  offsetof(PrepareUpdateParameters, output), SD_JSON_MANDATORY },
+                { "source",       SD_JSON_VARIANT_STRING, sd_json_dispatch_const_string, offsetof(UpdateParameters, source),        SD_JSON_MANDATORY },
+                { "resource",     SD_JSON_VARIANT_STRING, sd_json_dispatch_const_string, offsetof(UpdateParameters, resource),      SD_JSON_MANDATORY },
+                { "enhancedBlob", SD_JSON_VARIANT_STRING, sd_json_dispatch_const_string, offsetof(UpdateParameters, enhanced_blob), SD_JSON_MANDATORY },
+                { "output",       SD_JSON_VARIANT_OBJECT, dispatch_local_instance,  offsetof(PrepareUpdateParameters, output), SD_JSON_MANDATORY },
                 // dont need instances
                 {}
         };
 
-        _cleanup_(method_update_parameters_done) UpdateParameters  p;
+        _cleanup_(update_parameters_done) UpdateParameters  p;
         int r;
 
         assert(link);
@@ -508,13 +559,25 @@ static int vl_method_update(sd_varlink *link, sd_json_variant *json_parameters, 
                 return r;
 
         if (!http_url_is_valid(p.source) && !file_url_is_valid(p.source))
-                return sd_varlink_error_invalid_parameter(link, "source is not a valid url");
+                return sd_varlink_error_invalid_parameter_name(link, "source");
 
-        // parse manifest from blob, get checksum
+        _cleanup_strv_free_ char **instances, **digests;
+        r = parse_manifest_instances(&instances, &digests, p.enhanced_blob, strlen(p.enhanced_blob));
+        if (r < 0)
+                return sd_varlink_error_errno(link, r);
 
-        r = pull_file_job_begin(p.source, p.resource, p.output);
+        _cleanup_free_ char *expected_checksum;
+        r = instances_find_digest(&expected_checksum, p.resource, instances, digests);
+        if (r < 0)
+                return sd_varlink_error_errno(link, r);
 
-        // compare checksum
+        _cleanup_free_ char *actual_checksum;
+        r = pull_file_job_begin(p.source, p.resource, expected_checksum, p.output, &actual_checksum);
+        if (r < 0)
+                return sd_varlink_error_errno(link, r);
+
+        if (!streq(actual_checksum, expected_checksum))
+                    return sd_varlink_error_errno(link, -1);
 
         return sd_varlink_reply(link, NULL);
 }

@@ -20,6 +20,12 @@ systemd_updatectl_sources = files(
         'updatectl.c',
 )
 
+systemd_curl_updater_sources = files(
+        'curl-updater.c',
+        'sysupdate-instance.c',
+        'sysupdate-partition.c',
+)
+
 executables += [
         executable_template + {
                 'name' : 'systemd-sysupdate',
@@ -44,6 +50,22 @@ executables += [
                 'sources' : systemd_updatectl_sources,
                 'objects' : ['systemd-sysupdate'],
                 'conditions' : ['ENABLE_SYSUPDATED'],
+        },
+        libexec_template + {
+                'name' : 'systemd-curl-updater',
+                'public' : true,
+                'sources' : systemd_curl_updater_sources,
+                'objects' : ['systemd-importd', 'systemd-sysupdate'],
+                'conditions' : ['ENABLE_SYSUPDATED'],
+                'link_with' : [
+                        libshared,
+                        libshared_fdisk,
+                ],
+                'dependencies' : common_deps + [
+                        libfdisk,
+                        libopenssl,
+                        threads,
+                ],
         },
 ]
 

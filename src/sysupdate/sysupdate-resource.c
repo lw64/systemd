@@ -23,8 +23,11 @@
 #include "hexdecoct.h"
 #include "import-util.h"
 #include "iovec-util.h"
+#include "io-util.h"
+#include "memfd-util.h"
 #include "pidref.h"
 #include "process-util.h"
+#include "sd-varlink.h"
 #include "sort-util.h"
 #include "stat-util.h"
 #include "string-table.h"
@@ -34,8 +37,10 @@
 #include "sysupdate-partition.h"
 #include "sysupdate-pattern.h"
 #include "sysupdate-resource.h"
+#include "sysupdate-util.h"
 #include "time-util.h"
 #include "utf8.h"
+#include "varlink-util.h"
 
 void resource_destroy(Resource *rr) {
         assert(rr);
@@ -476,6 +481,63 @@ static int process_magic_file(
         return 1; /* we processed this line, don't use for pattern matching */
 }
 
+// mostly copied from pull_file_job_begin from pull-worker-varlink.c
+static int list_instances(const char *url, char **ret_blob, char ***ret_instances) {
+        int r;
+
+        assert(url);
+        assert(ret_blob);
+        assert(ret_instances);
+
+        const char *protocol;
+        r = url_get_protocol(url, &protocol);
+        if (r < 0)
+                return log_error_errno(r, "Failed to parse protocol from URL %s: %m", url);
+
+        _cleanup_(sd_varlink_flush_close_unrefp) sd_varlink *vl;
+        r = sd_varlink_connect_address(&vl, path_join(SYSTEMD_PULL_WORKER_DIRECTORY_PATH, protocol));
+        if (r < 0)
+                return log_error_errno(r, "Failed to connect to systemd-pull '%s' backend: %m", protocol);
+
+        sd_json_variant *reply = NULL, *d = NULL;
+        r = varlink_callbo_and_log(
+                vl,
+                "io.systemd.Updater.ListInstances",
+                &reply,
+                SD_JSON_BUILD_PAIR_STRING("source", url));
+        if (r < 0)
+                return r;
+
+        d = sd_json_variant_by_key(reply, "blob");
+        if (!d)
+                return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
+                                       "PullFile() response is missing 'blob' key.");
+
+        if (!sd_json_variant_is_string(d))
+                return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
+                                       "PullFile() response 'blob' field not a string");
+
+        *ret_blob = strdup(sd_json_variant_string(d));
+        if (!*ret_blob)
+                return log_oom();
+
+        d = sd_json_variant_by_key(reply, "instances");
+        if (!d)
+                return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
+                                       "PullFile() response is missing 'instances' key.");
+
+        if (!sd_json_variant_is_array(d))
+                return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
+                                       "PullFile() response 'instances' field not an array");
+
+        r = sd_json_variant_strv(d, ret_instances);
+        if (r < 0)
+                return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
+                                       "PullFile() response 'instances' field not an array");
+
+        return 0;
+}
+
 static int resource_load_from_web(
                 Resource *rr,
                 bool verify,
@@ -488,11 +550,15 @@ static int resource_load_from_web(
         WebCacheItem *ci;
         int r;
 
+
+        _cleanup_free_ char *blob;
+        _cleanup_free_ char **instances;
+
         assert(rr);
         POINTER_MAY_BE_NULL(web_cache);
 
         ci = web_cache ? web_cache_get_item(*web_cache, rr->path, verify) : NULL;
-        if (ci) {
+        if (false && ci) {
                 log_debug("Manifest web cache hit for %s.", rr->path);
 
                 manifest = (char*) ci->data;
@@ -500,21 +566,24 @@ static int resource_load_from_web(
         } else {
                 log_debug("Manifest web cache miss for %s.", rr->path);
 
-                r = download_manifest(rr->path, verify, &buf, &manifest_size);
+                r = list_instances(rr->path, &blob, &instances);
                 if (r < 0)
                         return r;
 
                 manifest = buf;
         }
 
-        if (memchr(manifest, 0, manifest_size))
-                return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Manifest file has embedded NUL byte, refusing.");
-        if (!utf8_is_valid_n(manifest, manifest_size))
-                return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Manifest file is not valid UTF-8, refusing.");
+        //if (memchr(manifest, 0, manifest_size))
+        //        return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Manifest file has embedded NUL byte, refusing.");
+        //if (!utf8_is_valid_n(manifest, manifest_size))
+        //        return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Manifest file is not valid UTF-8, refusing.");
 
-        p = manifest;
-        left = manifest_size;
+        //p = manifest;
+        //left = manifest_size;
 
+        char **inst = instances;
+
+        // TODO get instance list (check cache), iterate, match patterns
         while (left > 0) {
                 _cleanup_(instance_metadata_destroy) InstanceMetadata extracted_fields = INSTANCE_METADATA_NULL;
                 _cleanup_(iovec_done) struct iovec h = {};
@@ -522,6 +591,8 @@ static int resource_load_from_web(
                 Instance *instance;
                 const char *e;
 
+                size_t hlen;
+#if 0
                 /* 64 character hash + separator + filename + newline */
                 if (left < 67)
                         return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Corrupt manifest at line %zu, refusing.", line_nr);
@@ -548,8 +619,8 @@ static int resource_load_from_web(
                         return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Truncated manifest file at line %zu, refusing.", line_nr);
                 if (e == p)
                         return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Empty filename specified at manifest line %zu, refusing.", line_nr);
-
-                fn = strndup(p, e - p);
+#endif
+                fn = *inst; //strndup(p, e - p);
                 if (!fn)
                         return log_oom();
 
@@ -590,14 +661,17 @@ static int resource_load_from_web(
                                 instance->is_pending = false;
                         }
                 }
-
+/*
                 left -= (e - p) + 1;
                 p = e + 1;
 
                 line_nr++;
+*/
+                inst++;
         }
 
-        if (!ci && web_cache) {
+        if (false && !ci && web_cache) {
+                // TODO store blob, and instance list
                 r = web_cache_add_item(web_cache, rr->path, verify, manifest, manifest_size);
                 if (r < 0)
                         log_debug_errno(r, "Failed to add manifest '%s' to cache, ignoring: %m", rr->path);

@@ -330,6 +330,15 @@ units = [
           'symlinks' : ['sockets.target.wants/'],
         },
         { 'file' : 'systemd-creds@.service' },
+        {
+          'file' : 'systemd-curl-updater.socket',
+          'conditions' : ['ENABLE_IMPORTD'],
+          'symlinks' : ['sockets.target.wants/'],
+        },
+        {
+          'file' : 'systemd-curl-updater@.service',
+          'conditions' : ['ENABLE_IMPORTD'],
+        },
         { 'file' : 'systemd-exit.service' },
         { 'file' : 'systemd-factory-reset@.service.in' },
         {

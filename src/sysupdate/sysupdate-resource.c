@@ -574,10 +574,10 @@ static int resource_load_from_web(
         //p = manifest;
         //left = manifest_size;
 
-        int i = 0;
+        size_t i = 0;
 
         // TODO get instance list (check cache), iterate, match patterns
-        while (left > 0) {
+        while (i < strv_length(instances)) {
                 _cleanup_(instance_metadata_destroy) InstanceMetadata extracted_fields = INSTANCE_METADATA_NULL;
                 _cleanup_(iovec_done) struct iovec h = {};
                 _cleanup_free_ char *fn = NULL;

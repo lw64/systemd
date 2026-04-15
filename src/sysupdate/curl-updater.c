@@ -24,6 +24,7 @@
 #include "signal-util.h"
 #include "strv.h"
 #include "sysupdate-instance.h"
+#include "sysupdate-util.h"
 #include "utf8.h"
 #include "varlink-io.systemd.Updater.h"
 #include "varlink-util.h"

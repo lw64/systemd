@@ -271,6 +271,7 @@ conf.set_quoted('SYSTEMD_BINARY_PATH',                        libexecdir / 'syst
 conf.set_quoted('SYSTEMD_EXECUTOR_BINARY_PATH',               libexecdir / 'systemd-executor')
 conf.set_quoted('SYSTEMD_CATALOG_DIR',                        catalogdir)
 conf.set_quoted('SYSTEMD_CRYPTSETUP_PATH',                    bindir / 'systemd-cryptsetup')
+conf.set_quoted('SYSTEMD_UPDATER_DIRECTORY_PATH',             '/run/systemd/io.systemd.Updater')
 conf.set_quoted('SYSTEMD_EXPORT_PATH',                        libexecdir / 'systemd-export')
 conf.set_quoted('SYSTEMD_FSCK_PATH',                          libexecdir / 'systemd-fsck')
 conf.set_quoted('SYSTEMD_GROWFS_PATH',                        libexecdir / 'systemd-growfs')

@@ -349,7 +349,7 @@ static int download_manifest(
 }
 
 // mostly copied from pull_file_job_begin from pull-worker-varlink.c
-static int list_instances(const char *url, char **ret_blob, char ***ret_instances) {
+static int list_instances(const char *url, int *ret_blob, char ***ret_instances) {
         int r;
 
         assert(url);
@@ -362,9 +362,13 @@ static int list_instances(const char *url, char **ret_blob, char ***ret_instance
                 return log_error_errno(r, "Failed to parse protocol from URL %s: %m", url);
 
         _cleanup_(sd_varlink_flush_close_unrefp) sd_varlink *vl;
-        r = sd_varlink_connect_address(&vl, path_join(SYSTEMD_PULL_WORKER_DIRECTORY_PATH, protocol));
+        r = sd_varlink_connect_address(&vl, path_join(SYSTEMD_UPDATER_DIRECTORY_PATH, protocol));
         if (r < 0)
                 return log_error_errno(r, "Failed to connect to systemd-pull '%s' backend: %m", protocol);
+
+        r = sd_varlink_set_allow_fd_passing_input(vl, true);
+        if (r < 0)
+                return log_debug_errno(r, "Failed to enable varlink fd passing for write: %m");
 
         sd_json_variant *reply = NULL, *d = NULL;
         r = varlink_callbo_and_log(
@@ -378,29 +382,30 @@ static int list_instances(const char *url, char **ret_blob, char ***ret_instance
         d = sd_json_variant_by_key(reply, "blob");
         if (!d)
                 return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
-                                       "PullFile() response is missing 'blob' key.");
+                                       "ListInstances() response is missing 'blob' key.");
 
-        if (!sd_json_variant_is_string(d))
+        if (!sd_json_variant_is_integer(d))
                 return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
-                                       "PullFile() response 'blob' field not a string");
+                                       "ListInstances() response 'blob' field not an integer");
 
-        *ret_blob = strdup(sd_json_variant_string(d));
-        if (!*ret_blob)
-                return log_oom();
+        *ret_blob = sd_varlink_take_fd(vl, sd_json_variant_integer(d));
+        if (*ret_blob < 0)
+                return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
+                                       "ListInstances() response blob file descriptor is invalid.");
 
         d = sd_json_variant_by_key(reply, "instances");
         if (!d)
                 return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
-                                       "PullFile() response is missing 'instances' key.");
+                                       "ListInstances() response is missing 'instances' key.");
 
         if (!sd_json_variant_is_array(d))
                 return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
-                                       "PullFile() response 'instances' field not an array");
+                                       "ListInstances() response 'instances' field not an array");
 
         r = sd_json_variant_strv(d, ret_instances);
         if (r < 0)
                 return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
-                                       "PullFile() response 'instances' field not an array");
+                                       "ListInstances() response 'instances' field not an array");
 
         return 0;
 }
@@ -418,8 +423,8 @@ static int resource_load_from_web(
         int r;
 
 
-        _cleanup_free_ char *blob;
-        _cleanup_free_ char **instances;
+        int blob = -EBADF;
+        _cleanup_strv_free_ char **instances = NULL;
 
         assert(rr);
 
@@ -447,7 +452,7 @@ static int resource_load_from_web(
         //p = manifest;
         //left = manifest_size;
 
-        char **inst = instances;
+        int i = 0;
 
         // TODO get instance list (check cache), iterate, match patterns
         while (left > 0) {
@@ -485,7 +490,7 @@ static int resource_load_from_web(
                 if (e == p)
                         return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Empty filename specified at manifest line %zu, refusing.", line_nr);
 #endif
-                fn = *inst; //strndup(p, e - p);
+                fn = strdup(instances[i]); //strndup(p, e - p);
                 if (!fn)
                         return log_oom();
 
@@ -524,7 +529,7 @@ static int resource_load_from_web(
 
                 line_nr++;
 */
-                inst++;
+                i++;
         }
 
         if (false && !ci && web_cache) {

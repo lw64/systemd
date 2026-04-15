@@ -271,7 +271,7 @@ static int parse_manifest_instances(
                                 return log_oom();
                 }
 
-                r = strv_consume(&available_instances, fn);
+                r = strv_consume(&available_instances, TAKE_PTR(fn));
                 if (r < 0)
                         return log_oom();
 
@@ -282,7 +282,8 @@ static int parse_manifest_instances(
         }
 
         *ret = TAKE_PTR(available_instances);
-        *ret_digests = TAKE_PTR(digests);
+        if (ret_digests)
+                *ret_digests = TAKE_PTR(digests);
         return 0;
 }
 
@@ -309,7 +310,8 @@ typedef struct ListInstancesParameters {
 } ListInstancesParameters;
 
 static void list_instances_parameters_done(ListInstancesParameters *p) {
-        sd_event_unref(p->event);
+        assert(p);
+        sd_event_unrefp(&p->event);
 }
 
 static int vl_method_list_instances(sd_varlink *link, sd_json_variant *json_parameters, sd_varlink_method_flags_t flags, void *userdata) {
@@ -321,7 +323,9 @@ static int vl_method_list_instances(sd_varlink *link, sd_json_variant *json_para
                 {}
         };
 
-        _cleanup_(list_instances_parameters_done) ListInstancesParameters p;
+        _cleanup_(list_instances_parameters_done) ListInstancesParameters p = {
+                .event = NULL,
+        };
         int r;
 
         assert(link);
@@ -333,41 +337,28 @@ static int vl_method_list_instances(sd_varlink *link, sd_json_variant *json_para
         if (!http_url_is_valid(p.source) && !file_url_is_valid(p.source))
                 return sd_varlink_error_invalid_parameter_name(link, "source");
 
-        _cleanup_free_ char *manifest;
+        _cleanup_free_ char *manifest = NULL;
         size_t manifest_size;
         r = download_manifest(p.source, /* verify= */ false, &manifest, &manifest_size);
         if (r < 0)
                 return sd_varlink_error_errno(link, r);
 
-        _cleanup_strv_free_ char **instances;
+        _cleanup_strv_free_ char **instances = NULL;
         r = parse_manifest_instances(&instances, NULL, manifest, manifest_size);
         if (r < 0)
                 return sd_varlink_error_errno(link, r);
 
+        int blob_fd = memfd_new_and_seal ("blob", manifest, manifest_size);
+        if (blob_fd < 0)
+                return log_error_errno(errno, "Failed to create blob memfd: %m");
+
+        int fd_idx = sd_varlink_push_fd (link, TAKE_FD(blob_fd));
+        if (fd_idx < 0)
+                return log_debug_errno(fd_idx, "Failed to push file descriptor over varlink: %m");
+
         return sd_varlink_replybo(link,
-                                  SD_JSON_BUILD_PAIR_STRV("instances", instances),
-                                  SD_JSON_BUILD_PAIR_STRING("blob", manifest));
-}
-
-// copied from import/pull-worker-varlink.c
-static int url_get_protocol(const char *url, const char **protocol) {
-        const char *d;
-        size_t length;
-
-        assert(url);
-        assert(protocol);
-
-        /* Find colon separating protocol and hostname */
-        d = strchr(url, ':');
-        if (!d || url == d)
-                return -EINVAL;
-
-        length = d - url;
-
-        *protocol = strndup(url, length);
-        if (!*protocol)
-                return -ENOMEM;
-        return 0;
+                                  SD_JSON_BUILD_PAIR_STRV("instances", TAKE_PTR(instances)),
+                                  SD_JSON_BUILD_PAIR_INTEGER("blob", fd_idx));
 }
 
 // mostly copied from pull_file_job_begin from pull-worker-varlink.c
@@ -586,7 +577,7 @@ static int vl_server(void) {
         _cleanup_(sd_varlink_server_unrefp) sd_varlink_server *varlink_server = NULL;
         int r;
 
-        r = varlink_server_new(&varlink_server, SD_VARLINK_SERVER_ALLOW_FD_PASSING_INPUT, /* userdata= */ NULL);
+        r = varlink_server_new(&varlink_server, SD_VARLINK_SERVER_ALLOW_FD_PASSING_INPUT | SD_VARLINK_SERVER_ALLOW_FD_PASSING_OUTPUT, /* userdata= */ NULL);
         if (r < 0)
                 return log_error_errno(r, "Failed to allocate Varlink server: %m");
 

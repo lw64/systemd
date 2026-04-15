@@ -19,7 +19,7 @@ static SD_VARLINK_DEFINE_METHOD(
                 SD_VARLINK_FIELD_COMMENT("available instances"),
                 SD_VARLINK_DEFINE_OUTPUT(instances, SD_VARLINK_STRING, SD_VARLINK_ARRAY),
                 SD_VARLINK_FIELD_COMMENT("cached blob"),
-                SD_VARLINK_DEFINE_OUTPUT(blob, SD_VARLINK_STRING, 0));
+                SD_VARLINK_DEFINE_OUTPUT(blobFileDescriptor, SD_VARLINK_INT, 0));
 
 static SD_VARLINK_DEFINE_METHOD(
                 PrepareUpdate,
@@ -28,13 +28,13 @@ static SD_VARLINK_DEFINE_METHOD(
                 SD_VARLINK_FIELD_COMMENT("selected resource to update (filename)"),
                 SD_VARLINK_DEFINE_INPUT(resource, SD_VARLINK_STRING, 0),
                 SD_VARLINK_FIELD_COMMENT("cached blob"),
-                SD_VARLINK_DEFINE_INPUT(blob, SD_VARLINK_STRING, 0),
+                SD_VARLINK_DEFINE_INPUT(blobFileDescriptor, SD_VARLINK_INT, 0),
                 SD_VARLINK_FIELD_COMMENT("Instance to update into (read-only, to check for a paused update)"),
                 SD_VARLINK_DEFINE_INPUT_BY_TYPE(output, LocalUpdateInstance, 0),
                 SD_VARLINK_FIELD_COMMENT("size of the instance to download"),
                 SD_VARLINK_DEFINE_OUTPUT(size, SD_VARLINK_INT, 0),
                 SD_VARLINK_FIELD_COMMENT("enhanced blob"),
-                SD_VARLINK_DEFINE_OUTPUT(enhancedBlob, SD_VARLINK_STRING, 0));
+                SD_VARLINK_DEFINE_OUTPUT(enhancedBlobFileDescriptor, SD_VARLINK_INT, 0));
 
 static SD_VARLINK_DEFINE_METHOD(
                 Update,
@@ -43,7 +43,7 @@ static SD_VARLINK_DEFINE_METHOD(
                 SD_VARLINK_FIELD_COMMENT("selected resource to update (filename)"),
                 SD_VARLINK_DEFINE_INPUT(resource, SD_VARLINK_STRING, 0),
                 SD_VARLINK_FIELD_COMMENT("cached enhanced blob"),
-                SD_VARLINK_DEFINE_INPUT(enhancedBlob, SD_VARLINK_STRING, 0),
+                SD_VARLINK_DEFINE_INPUT(enhancedBlobFileDescriptor, SD_VARLINK_INT, 0),
                 SD_VARLINK_FIELD_COMMENT("Instances to reuse data from for delta-updating"),
                 SD_VARLINK_DEFINE_INPUT_BY_TYPE(instances, LocalUpdateInstance, SD_VARLINK_ARRAY|SD_VARLINK_NULLABLE),
                 SD_VARLINK_FIELD_COMMENT("Instance to update into"),

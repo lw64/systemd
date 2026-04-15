@@ -24,3 +24,24 @@ int reboot_now(void) {
 
         return 0;
 }
+
+// copied from import/pull-worker-varlink.c
+int url_get_protocol(const char *url, const char **protocol) {
+        const char *d;
+        size_t length;
+
+        assert(url);
+        assert(protocol);
+
+        /* Find colon separating protocol and hostname */
+        d = strchr(url, ':');
+        if (!d || url == d)
+                return -EINVAL;
+
+        length = d - url;
+
+        *protocol = strndup(url, length);
+        if (!*protocol)
+                return -ENOMEM;
+        return 0;
+}

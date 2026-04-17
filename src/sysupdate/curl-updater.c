@@ -471,14 +471,17 @@ static int pull_file_job_begin_prepare(const char *url, const char *resource, in
 typedef struct PrepareUpdateParameters {
         const char *source;
         const char *resource;
-        const char *blob;
+        unsigned blob_fd_idx;
+        int blob_fd;
         LocalInstance *output;
         sd_event *event;
 } PrepareUpdateParameters;
 
 static void prepare_update_parameters_done(PrepareUpdateParameters *p) {
+        assert(p);
         local_instance_freep(&p->output);
-        sd_event_unref(p->event);
+        sd_event_unrefp(&p->event);
+        safe_close(p->blob_fd);
 }
 
 static int vl_method_prepare_update(sd_varlink *link, sd_json_variant *json_parameters, sd_varlink_method_flags_t flags, void *userdata) {
@@ -486,12 +489,16 @@ static int vl_method_prepare_update(sd_varlink *link, sd_json_variant *json_para
         static const sd_json_dispatch_field dispatch_table[] = {
                 { "source",   SD_JSON_VARIANT_STRING, sd_json_dispatch_const_string, offsetof(PrepareUpdateParameters, source),   SD_JSON_MANDATORY },
                 { "resource", SD_JSON_VARIANT_STRING, sd_json_dispatch_const_string, offsetof(PrepareUpdateParameters, resource), SD_JSON_MANDATORY },
-                { "blob",     SD_JSON_VARIANT_STRING, sd_json_dispatch_const_string, offsetof(PrepareUpdateParameters, blob),     SD_JSON_MANDATORY },
+                { "blobFileDescriptor", _SD_JSON_VARIANT_TYPE_INVALID, sd_json_dispatch_uint, offsetof(PrepareUpdateParameters, blob_fd_idx), SD_JSON_MANDATORY },
                 { "output",   SD_JSON_VARIANT_OBJECT, dispatch_local_instance,  offsetof(PrepareUpdateParameters, output),   SD_JSON_MANDATORY },
                 {}
         };
 
-        _cleanup_(prepare_update_parameters_done) PrepareUpdateParameters p;
+        _cleanup_(prepare_update_parameters_done) PrepareUpdateParameters p = {
+                .event = NULL,
+                .blob_fd_idx = UINT_MAX,
+                .blob_fd = -EBADF,
+        };
         int r;
 
         assert(link);
@@ -503,6 +510,10 @@ static int vl_method_prepare_update(sd_varlink *link, sd_json_variant *json_para
         if (!http_url_is_valid(p.source) && !file_url_is_valid(p.source))
                 return sd_varlink_error_invalid_parameter_name(link, "source");
 
+        p.blob_fd = sd_varlink_take_fd(link, p.blob_fd_idx);
+        if (p.blob_fd < 0)
+                return sd_varlink_error_invalid_parameter_name(link, "blobFileDescriptor");
+
         int size = 0;
         r = pull_file_job_begin_prepare(p.source, p.resource, &size);
         if (r < 0)
@@ -513,8 +524,8 @@ static int vl_method_prepare_update(sd_varlink *link, sd_json_variant *json_para
 
         // don't do anything with the blob
         return sd_varlink_replybo(link,
-                                  SD_JSON_BUILD_PAIR_INTEGER("size", size),
-                                  SD_JSON_BUILD_PAIR_STRING("enhancedBlob", p.blob));
+                                  SD_JSON_BUILD_PAIR_INTEGER("size", size));
+                                  //SD_JSON_BUILD_PAIR_STRING("enhancedBlob", p.blob));
 }
 
 typedef struct UpdateParameters {

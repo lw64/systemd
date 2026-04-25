@@ -228,6 +228,7 @@ shared_sources = files(
         'varlink-io.systemd.Network.Link.c',
         'varlink-io.systemd.PCRExtend.c',
         'varlink-io.systemd.PCRLock.c',
+        'varlink-io.systemd.PullJob.c',
         'varlink-io.systemd.QemuMachineInstance.c',
         'varlink-io.systemd.Repart.c',
         'varlink-io.systemd.Resolve.c',

@@ -17,6 +17,7 @@
 #include "main-func.h"
 #include "memfd-util.h"
 #include "path-util.h"
+#include "pidref.h"
 #include "process-util.h"
 #include "pull-job.h"
 #include "sd-event.h"
@@ -125,7 +126,6 @@ static int download_manifest(
         _cleanup_free_ char *buffer = NULL, *suffixed_url = NULL;
         _cleanup_close_ int manifest = -EBADF;
         size_t size = 0;
-        pid_t pid;
         int r;
 
         assert(url);
@@ -146,11 +146,12 @@ static int download_manifest(
         log_info("%s Acquiring manifest file %s%s", glyph(GLYPH_DOWNLOAD),
                  suffixed_url, glyph(GLYPH_ELLIPSIS));
 
-        r = safe_fork_full("(sd-pull)",
+        _cleanup_(pidref_done) PidRef pidref = PIDREF_NULL;
+        r = pidref_safe_fork_full("(sd-pull)",
                            (int[]) { -EBADF, -EBADF, STDERR_FILENO },
                            NULL, 0,
                            FORK_RESET_SIGNALS|FORK_CLOSE_ALL_FDS|FORK_DEATHSIG_SIGTERM|FORK_REARRANGE_STDIO|FORK_LOG,
-                           &pid);
+                           &pidref);
         if (r < 0)
                 return r;
         if (r == 0) {
@@ -177,7 +178,7 @@ static int download_manifest(
          * us as it runs. We thus need to check the return value of the process *before* parsing, to be
          * reasonably safe. */
 
-        r = wait_for_terminate_and_check("(sd-pull)", pid, WAIT_LOG);
+        r = pidref_wait_for_terminate_and_check("(sd-pull)", &pidref, WAIT_LOG);
         if (r < 0)
                 return r;
         if (r != 0)

@@ -1,12 +1,20 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
 #include "alloc-util.h"
+#include "fd-util.h"
 #include "log.h"
+#include "path-util.h"
+#include "sd-varlink.h"
 #include "sysupdate-instance.h"
+#include "sysupdate-resource.h"
+#include "sysupdate-util.h"
+#include "sysupdate-cache.h"
+#include "varlink-util.h"
 
 void instance_metadata_destroy(InstanceMetadata *m) {
         assert(m);
         free(m->version);
+        safe_close(m->enhanced_blob);
 }
 
 int instance_new(
@@ -56,7 +64,95 @@ Instance *instance_free(Instance *i) {
         instance_metadata_destroy(&i->metadata);
 
         free(i->path);
+        freep(&i->name);
         partition_info_destroy(&i->partition_info);
 
         return mfree(i);
+}
+
+// mostly copied from pull_file_job_begin from pull-worker-varlink.c
+static int prepare(const char *source, const char *resource, int blob, int *ret_enhanced_blob, uint64_t *ret_size) {
+        int r;
+
+        assert(source);
+        assert(resource);
+        assert(ret_enhanced_blob);
+        assert(ret_size);
+
+        const char *protocol;
+        r = url_get_protocol(source, &protocol);
+        if (r < 0)
+                return log_error_errno(r, "Failed to parse protocol from URL %s: %m", source);
+
+        _cleanup_(sd_varlink_flush_close_unrefp) sd_varlink *vl;
+        r = sd_varlink_connect_address(&vl, path_join(SYSTEMD_UPDATER_DIRECTORY_PATH, protocol));
+        if (r < 0)
+                return log_error_errno(r, "Failed to connect to '%s' updater backend: %m", protocol);
+
+        r = sd_varlink_set_allow_fd_passing_input(vl, true);
+        if (r < 0)
+                return log_debug_errno(r, "Failed to enable varlink fd passing for write: %m");
+
+        r = sd_varlink_set_allow_fd_passing_output(vl, true);
+        if (r < 0)
+                return log_debug_errno(r, "Failed to enable varlink fd passing for read: %m");
+
+        int blob_fd_index = sd_varlink_push_dup_fd(vl, blob);
+        if (blob_fd_index < 0)
+                return log_error_errno(blob_fd_index, "Failed to push blob fd into varlink socket: %m");
+
+        sd_json_variant *reply = NULL, *d = NULL;
+        r = varlink_callbo_and_log(
+                vl,
+                "io.systemd.Updater.PrepareUpdate",
+                &reply,
+                SD_JSON_BUILD_PAIR_STRING("source", source),
+                SD_JSON_BUILD_PAIR_STRING("resource", resource),
+                SD_JSON_BUILD_PAIR_INTEGER("blobFileDescriptor", blob_fd_index));
+        if (r < 0)
+                return r;
+
+        d = sd_json_variant_by_key(reply, "enhancedBlobFileDescriptor");
+        if (!d)
+                return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
+                                       "PrepareUpdate() response is missing 'enhancedBlobFileDescriptor' key.");
+
+        if (!sd_json_variant_is_integer(d))
+                return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
+                                       "PrepareUpdate() response 'enhancedBlobFileDescriptor' field not an integer");
+
+        *ret_enhanced_blob = sd_varlink_take_fd(vl, sd_json_variant_integer(d));
+        if (*ret_enhanced_blob < 0)
+                return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
+                                       "PrepareUpdate() response enhanced blob file descriptor is invalid.");
+
+        d = sd_json_variant_by_key(reply, "size");
+        if (!d)
+                return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
+                                       "PrepareUpdate() response is missing 'size' key.");
+
+        if (!sd_json_variant_is_unsigned(d))
+                return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
+                                       "PrepareUpdate() response 'size' field not an unsigned integer");
+
+        *ret_size = sd_json_variant_unsigned(d);
+
+        return 0;
+}
+
+int instance_acquire_blob_and_size(Instance *i, Hashmap *web_cache, bool verified) {
+        int r;
+
+        WebCacheItem *cache_item = web_cache_get_item(web_cache, i->resource->path, verified);
+        if (!cache_item || cache_item->blob < 0)
+                return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
+                                       "Web Cache does not provide the required blob.");
+
+        int enhanced_blob = -EBADF;
+        uint64_t size = UINT64_MAX;
+        r = prepare(i->resource->path, i->name, cache_item->blob, &enhanced_blob, &size);
+        if (r < 0)
+                return r;
+
+        return 0;
 }

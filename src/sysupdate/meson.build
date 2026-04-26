@@ -23,6 +23,7 @@ systemd_updatectl_sources = files(
 systemd_curl_updater_sources = files(
         'curl-updater.c',
         'sysupdate-instance.c',
+        'sysupdate-cache.c',
         'sysupdate-partition.c',
 )
 

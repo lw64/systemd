@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
 #include "alloc-util.h"
+#include "fd-util.h"
 #include "hashmap.h"
 #include "memory-util.h"
 #include "sysupdate-cache.h"
+#include "strv.h"
 
 #define WEB_CACHE_ENTRIES_MAX 64U
 #define WEB_CACHE_ITEM_SIZE_MAX (64U*1024U*1024U)
@@ -13,6 +15,8 @@ static WebCacheItem* web_cache_item_free(WebCacheItem *i) {
                 return NULL;
 
         free(i->url);
+        safe_close(i->blob);
+        strv_freep(&i->instances);
         return mfree(i);
 }
 
@@ -24,8 +28,8 @@ int web_cache_add_item(
                 Hashmap **web_cache,
                 const char *url,
                 bool verified,
-                const void *data,
-                size_t size) {
+                int blob,
+                char **instances) {
 
         _cleanup_(web_cache_item_freep) WebCacheItem *item = NULL;
         _cleanup_free_ char *u = NULL;
@@ -33,13 +37,11 @@ int web_cache_add_item(
 
         assert(web_cache);
         assert(url);
-        assert(data || size == 0);
-
-        if (size > WEB_CACHE_ITEM_SIZE_MAX)
-                return -E2BIG;
+        assert(blob > 0);
+        assert(instances);
 
         item = web_cache_get_item(*web_cache, url, verified);
-        if (item && memcmp_nn(item->data, item->size, data, size) == 0)
+        if (item && item->blob == blob)
                 return 0;
 
         if (hashmap_size(*web_cache) >= (size_t) (WEB_CACHE_ENTRIES_MAX + hashmap_contains(*web_cache, url)))
@@ -53,18 +55,16 @@ int web_cache_add_item(
         if (!u)
                 return -ENOMEM;
 
-        item = malloc(offsetof(WebCacheItem, data) + size + 1);
+        item = malloc(sizeof(WebCacheItem));
         if (!item)
                 return -ENOMEM;
 
         *item = (WebCacheItem) {
                 .url = TAKE_PTR(u),
-                .size = size,
+                .blob = blob,
+                .instances = strv_copy(instances),
                 .verified = verified,
         };
-
-        /* Just to be extra paranoid, let's NUL terminate the downloaded buffer */
-        *mempcpy_typesafe(item->data, data, size) = 0;
 
         web_cache_item_free(hashmap_remove(*web_cache, url));
 

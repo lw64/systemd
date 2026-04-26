@@ -56,6 +56,7 @@ void resource_destroy(Resource *rr) {
 static int resource_add_instance(
                 Resource *rr,
                 const char *path,
+                const char *name,
                 const InstanceMetadata *f,
                 Instance **ret) {
 
@@ -66,6 +67,7 @@ static int resource_add_instance(
         assert(path);
         assert(f);
         assert(f->version);
+        POINTER_MAY_BE_NULL (name);
 
         if (!GREEDY_REALLOC(rr->instances, rr->n_instances + 1))
                 return log_oom();
@@ -73,6 +75,9 @@ static int resource_add_instance(
         r = instance_new(rr, path, f, &i);
         if (r < 0)
                 return r;
+
+        if (name)
+                i->name = strdup(name);
 
         rr->instances[rr->n_instances++] = i;
 
@@ -186,7 +191,7 @@ static int resource_load_from_directory_recursive(
                 if (!joined)
                         return log_oom();
 
-                r = resource_add_instance(rr, joined, &extracted_fields, &instance);
+                r = resource_add_instance(rr, joined, rel_joined, &extracted_fields, &instance);
                 if (r < 0)
                         return r;
 
@@ -293,7 +298,7 @@ static int resource_load_from_blockdev(Resource *rr) {
                 if (IN_SET(r, PATTERN_MATCH_NO, PATTERN_MATCH_RETRY))
                         continue;
 
-                r = resource_add_instance(rr, pinfo.device, &extracted_fields, &instance);
+                r = resource_add_instance(rr, pinfo.device, NULL, &extracted_fields, &instance);
                 if (r < 0)
                         return r;
 
@@ -485,7 +490,7 @@ static int list_instances(const char *url, int *ret_blob, char ***ret_instances)
         _cleanup_(sd_varlink_flush_close_unrefp) sd_varlink *vl;
         r = sd_varlink_connect_address(&vl, path_join(SYSTEMD_UPDATER_DIRECTORY_PATH, protocol));
         if (r < 0)
-                return log_error_errno(r, "Failed to connect to systemd-pull '%s' backend: %m", protocol);
+                return log_error_errno(r, "Failed to connect to '%s' updater backend: %m", protocol);
 
         r = sd_varlink_set_allow_fd_passing_input(vl, true);
         if (r < 0)
@@ -536,9 +541,9 @@ static int resource_load_from_web(
                 bool verify,
                 Hashmap **web_cache) {
 
-        size_t manifest_size = 0, left = 0;
-        _cleanup_free_ char *buf = NULL;
-        const char *manifest, *p;
+        //size_t manifest_size = 0, left = 0;
+        //_cleanup_free_ char *buf = NULL;
+        //const char *manifest, *p;
         size_t line_nr = 1;
         WebCacheItem *ci;
         int r;
@@ -551,11 +556,11 @@ static int resource_load_from_web(
         POINTER_MAY_BE_NULL(web_cache);
 
         ci = web_cache ? web_cache_get_item(*web_cache, rr->path, verify) : NULL;
-        if (false && ci) {
+        if (ci) {
                 log_debug("Manifest web cache hit for %s.", rr->path);
 
-                manifest = (char*) ci->data;
-                manifest_size = ci->size;
+                blob = ci->blob;
+                instances = strv_copy(ci->instances);
         } else {
                 log_debug("Manifest web cache miss for %s.", rr->path);
 
@@ -563,7 +568,7 @@ static int resource_load_from_web(
                 if (r < 0)
                         return r;
 
-                manifest = buf;
+                //manifest = buf;
         }
 
         //if (memchr(manifest, 0, manifest_size))
@@ -574,10 +579,8 @@ static int resource_load_from_web(
         //p = manifest;
         //left = manifest_size;
 
-        size_t i = 0;
-
         // TODO get instance list (check cache), iterate, match patterns
-        while (i < strv_length(instances)) {
+        for (size_t i = 0; i < strv_length(instances); i++) {
                 _cleanup_(instance_metadata_destroy) InstanceMetadata extracted_fields = INSTANCE_METADATA_NULL;
                 _cleanup_(iovec_done) struct iovec h = {};
                 _cleanup_free_ char *fn = NULL;
@@ -638,7 +641,7 @@ static int resource_load_from_web(
                                 if (r < 0)
                                         return log_error_errno(r, "Failed to build instance URL: %m");
 
-                                r = resource_add_instance(rr, path, &extracted_fields, &instance);
+                                r = resource_add_instance(rr, path, fn, &extracted_fields, &instance);
                                 if (r < 0)
                                         return r;
 
@@ -660,12 +663,11 @@ static int resource_load_from_web(
 
                 line_nr++;
 */
-                i++;
         }
 
-        if (false && !ci && web_cache) {
+        if (!ci && web_cache) {
                 // TODO store blob, and instance list
-                r = web_cache_add_item(web_cache, rr->path, verify, manifest, manifest_size);
+                r = web_cache_add_item(web_cache, rr->path, verify, blob, instances);
                 if (r < 0)
                         log_debug_errno(r, "Failed to add manifest '%s' to cache, ignoring: %m", rr->path);
                 else

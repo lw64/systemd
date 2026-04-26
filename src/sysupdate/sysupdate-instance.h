@@ -17,6 +17,8 @@ typedef struct InstanceMetadata {
         usec_t mtime;
         mode_t mode;
         uint64_t size;                     /* uncompressed size of the file */
+        uint64_t download_size;
+        int enhanced_blob;
         uint64_t tries_done, tries_left;   /* for boot assessment counters */
         int no_auto;
         int read_only;
@@ -30,6 +32,8 @@ typedef struct InstanceMetadata {
                 .mtime = USEC_INFINITY,         \
                 .mode = MODE_INVALID,           \
                 .size = UINT64_MAX,             \
+                .download_size = UINT64_MAX,    \
+                .enhanced_blob = -EBADF,        \
                 .tries_done = UINT64_MAX,       \
                 .tries_left = UINT64_MAX,       \
                 .no_auto = -1,                  \
@@ -46,6 +50,7 @@ struct Instance {
 
         /* Where we found the instance */
         char *path;  /* includes the `.sysupdate.partial.` (etc.) prefix, if applicable */
+        char *name;  /* path = resource->path + name, if applicable */
         PartitionInfo partition_info;
 
         bool is_partial;
@@ -56,5 +61,6 @@ void instance_metadata_destroy(InstanceMetadata *m);
 
 int instance_new(Resource *rr, const char *path, const InstanceMetadata *f, Instance **ret);
 Instance *instance_free(Instance *i);
+int instance_acquire_blob_and_size(Instance *i, Hashmap *web_cache, bool verified);
 
 DEFINE_TRIVIAL_CLEANUP_FUNC(Instance*, instance_free);

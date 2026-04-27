@@ -61,6 +61,6 @@ void instance_metadata_destroy(InstanceMetadata *m);
 
 int instance_new(Resource *rr, const char *path, const InstanceMetadata *f, Instance **ret);
 Instance *instance_free(Instance *i);
-int instance_acquire_blob_and_size(Instance *i, Hashmap *web_cache, bool verified);
+int instance_acquire_blob_and_size(Instance *i, Transfer *t, Hashmap *web_cache, bool verified);
 
 DEFINE_TRIVIAL_CLEANUP_FUNC(Instance*, instance_free);

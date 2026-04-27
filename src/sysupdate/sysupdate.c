@@ -1053,13 +1053,6 @@ static int context_acquire(
 
                 assert(inst);
 
-                r = instance_acquire_blob_and_size(inst, c->web_cache, arg_verify);
-                if (r < 0)
-                        log_warning_errno(SYNTHETIC_ERRNO(EINVAL), "Preparation of Instance '%s' failed.", inst->path);
-
-                if (inst->metadata.size != UINT64_MAX)
-                        log_info("Download for '%s' is %lu bytes big.", inst->path, inst->metadata.size);
-
                 r = transfer_compute_temporary_paths(t, inst, metadata + i);
                 if (r < 0)
                         return r;
@@ -1100,7 +1093,9 @@ static int context_acquire(
                         continue;
                 }
 
-                r = transfer_acquire_instance(t, inst, metadata + i, context_on_acquire_progress, c);
+                // prepare here
+
+                r = transfer_acquire_instance(t, inst, metadata + i, c->web_cache, context_on_acquire_progress, c);
                 if (r < 0)
                         return r;
         }

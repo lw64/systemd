@@ -1254,7 +1254,7 @@ int transfer_compute_temporary_paths(Transfer *t, Instance *i, InstanceMetadata 
         return 0;
 }
 
-int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, TransferProgress cb, void *userdata) {
+int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Hashmap *web_cache, TransferProgress cb, void *userdata) {
         _cleanup_free_ char *digest = NULL;
         char offset[DECIMAL_STR_MAX(uint64_t)+1], max_size[DECIMAL_STR_MAX(uint64_t)+1];
         const char *where = NULL;
@@ -1327,6 +1327,13 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Tra
         }
 
         assert(where);
+
+        r = instance_acquire_blob_and_size(i, t, web_cache, false);
+        if (r < 0)
+                log_warning_errno(SYNTHETIC_ERRNO(EINVAL), "Preparation of Instance '%s' failed.", i->path);
+
+        if (i->metadata.size != UINT64_MAX)
+                log_info("Download for '%s' is %lu bytes big.", i->path, i->metadata.size);
 
         log_info("%s Acquiring %s %s %s...", glyph(GLYPH_DOWNLOAD), i->path, glyph(GLYPH_ARROW_RIGHT), where);
 

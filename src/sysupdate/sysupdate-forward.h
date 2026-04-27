@@ -10,3 +10,4 @@ typedef struct PartitionInfo PartitionInfo;
 typedef struct Resource Resource;
 typedef struct Instance Instance;
 typedef struct InstanceMetadata InstanceMetadata;
+typedef struct Transfer Transfer;

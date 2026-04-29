@@ -45,7 +45,7 @@ struct Instance {
         InstanceMetadata metadata;
 
         /* Where we found the instance */
-        char *path;  /* includes the `.sysupdate.partial.` (etc.) prefix, if applicable */
+        char *name;  /* path = resource->path + name, if applicable */
         PartitionInfo partition_info;
 
         bool is_partial;
@@ -54,7 +54,7 @@ struct Instance {
 
 void instance_metadata_destroy(InstanceMetadata *m);
 
-int instance_new(Resource *rr, const char *path, const InstanceMetadata *f, Instance **ret);
+int instance_new(Resource *rr, const InstanceMetadata *f, Instance **ret);
 Instance *instance_free(Instance *i);
 
 DEFINE_TRIVIAL_CLEANUP_FUNC(Instance*, instance_free);

@@ -765,9 +765,11 @@ static int context_show_version(Context *c, const char *version) {
                         continue;
                 }
 
+                assert(i->resource);
+
                 r = table_add_many(t,
                                    TABLE_STRING, resource_type_to_string(i->resource->type),
-                                   TABLE_PATH, i->path);
+                                   TABLE_PATH, i->resource->path);
                 if (r < 0)
                         return table_log_add_error(r);
 

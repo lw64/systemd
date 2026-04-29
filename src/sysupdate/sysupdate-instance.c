@@ -11,7 +11,6 @@ void instance_metadata_destroy(InstanceMetadata *m) {
 
 int instance_new(
                 Resource *rr,
-                const char *path,
                 const InstanceMetadata *f,
                 Instance **ret) {
 
@@ -19,14 +18,9 @@ int instance_new(
         _cleanup_free_ char *p = NULL, *v = NULL;
 
         assert(rr);
-        assert(path);
         assert(f);
         assert(f->version);
         assert(ret);
-
-        p = strdup(path);
-        if (!p)
-                return log_oom();
 
         v = strdup(f->version);
         if (!v)
@@ -39,7 +33,6 @@ int instance_new(
         *i = (Instance) {
                 .resource = rr,
                 .metadata = *f,
-                .path = TAKE_PTR(p),
                 .partition_info = PARTITION_INFO_NULL,
         };
 
@@ -55,7 +48,7 @@ Instance *instance_free(Instance *i) {
 
         instance_metadata_destroy(&i->metadata);
 
-        free(i->path);
+        freep(&i->name);
         partition_info_destroy(&i->partition_info);
 
         return mfree(i);

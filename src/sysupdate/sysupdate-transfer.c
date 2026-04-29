@@ -740,17 +740,18 @@ static int transfer_instance_vacuum(
 
         assert(t);
         assert(instance);
+        assert(instance->resource);
 
         switch (t->target.type) {
 
         case RESOURCE_REGULAR_FILE:
         case RESOURCE_DIRECTORY:
         case RESOURCE_SUBVOLUME:
-                r = rm_rf(instance->path, REMOVE_ROOT|REMOVE_PHYSICAL|REMOVE_SUBVOLUME|REMOVE_MISSING_OK|REMOVE_CHMOD);
+                r = rm_rf(instance->resource->path, REMOVE_ROOT|REMOVE_PHYSICAL|REMOVE_SUBVOLUME|REMOVE_MISSING_OK|REMOVE_CHMOD);
                 if (r < 0 && r != -ENOENT)
-                        return log_error_errno(r, "Failed to make room, deleting '%s' failed: %m", instance->path);
+                        return log_error_errno(r, "Failed to make room, deleting '%s' failed: %m", instance->resource->path);
 
-                (void) rmdir_parents(instance->path, t->target.path);
+                (void) rmdir_parents(instance->resource->path, t->target.path);
 
                 break;
 
@@ -824,7 +825,7 @@ int transfer_vacuum(
                 log_info("%s Removing old %s '%s' (%s).",
                          glyph(GLYPH_RECYCLING),
                          instance->is_partial ? "partial" : "pending",
-                         instance->path,
+                         instance->resource->path,
                          resource_type_to_string(instance->resource->type));
 
                 r = transfer_instance_vacuum(t, instance);
@@ -923,7 +924,7 @@ int transfer_vacuum(
                 log_info("%s Removing %s '%s' (%s).",
                          glyph(GLYPH_RECYCLING),
                          space == UINT64_MAX ? "disabled" : "old",
-                         oldest->path,
+                         oldest->resource->path,
                          resource_type_to_string(oldest->resource->type));
 
                 r = transfer_instance_vacuum(t, oldest);
@@ -1263,6 +1264,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Has
 
         assert(t);
         assert(i);
+        assert(i->resource);
         assert(f);
         assert(i->resource == &t->source);
         assert(cb);
@@ -1270,9 +1272,9 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Has
         /* Does this instance already exist in the target? Then we don't need to acquire anything */
         existing = resource_find_instance(&t->target, i->metadata.version);
         if (existing && (existing->is_partial || existing->is_pending))
-                return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Failed to acquire '%s', instance is already partial or pending in the target.", i->path);
+                return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Failed to acquire '%s', instance is already partial or pending in the target.", i->resource->path);
         if (existing) {
-                log_info("No need to acquire '%s', already installed.", i->path);
+                log_info("No need to acquire '%s', already installed.", i->resource->path);
                 return 0;
         }
 
@@ -1330,19 +1332,19 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Has
 
         r = instance_acquire_blob_and_size(i, t, web_cache, false);
         if (r < 0)
-                log_warning_errno(SYNTHETIC_ERRNO(EINVAL), "Preparation of Instance '%s' failed.", i->path);
+                log_warning_errno(SYNTHETIC_ERRNO(EINVAL), "Preparation of Instance '%s' failed.", i->resource->path);
 
         if (i->metadata.size != UINT64_MAX)
-                log_info("Download for '%s' is %lu bytes big.", i->path, i->metadata.size);
+                log_info("Download for '%s' is %lu bytes big.", i->resource->path, i->metadata.size);
 
-        log_info("%s Acquiring %s %s %s...", glyph(GLYPH_DOWNLOAD), i->path, glyph(GLYPH_ARROW_RIGHT), where);
+        log_info("%s Acquiring %s %s %s...", glyph(GLYPH_DOWNLOAD), i->resource->path, glyph(GLYPH_ARROW_RIGHT), where);
 
         if (RESOURCE_IS_URL(i->resource->type)) {
                 /* For URL sources we require the SHA256 sum to be known so that we can validate the
                  * download. */
 
                 if (!i->metadata.sha256sum_set)
-                        return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "SHA256 checksum not known for download '%s', refusing.", i->path);
+                        return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "SHA256 checksum not known for download '%s', refusing.", i->resource->path);
 
                 digest = hexmem(i->metadata.sha256sum, sizeof(i->metadata.sha256sum));
                 if (!digest)
@@ -1368,7 +1370,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Has
                                                "raw",
                                                "--direct",          /* just copy/unpack the specified file, don't do anything else */
                                                arg_sync ? "--sync=yes" : "--sync=no",
-                                               i->path,
+                                               i->resource->path,
                                                t->temporary_partial_path),
                                         t, i, cb, userdata);
                         break;
@@ -1385,7 +1387,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Has
                                                "--offset", offset,
                                                "--size-max", max_size,
                                                arg_sync ? "--sync=yes" : "--sync=no",
-                                               i->path,
+                                               i->resource->path,
                                                t->target.path),
                                         t, i, cb, userdata);
                         break;
@@ -1409,7 +1411,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Has
                                        "--direct",          /* just untar the specified file, don't do anything else */
                                        arg_sync ? "--sync=yes" : "--sync=no",
                                        t->target.type == RESOURCE_SUBVOLUME ? "--btrfs-subvol=yes" : "--btrfs-subvol=no",
-                                       i->path,
+                                       i->resource->path,
                                        t->temporary_partial_path),
                                 t, i, cb, userdata);
                 break;
@@ -1426,7 +1428,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Has
                                        "--direct",          /* just untar the specified file, don't do anything else */
                                        arg_sync ? "--sync=yes" : "--sync=no",
                                        t->target.type == RESOURCE_SUBVOLUME ? "--btrfs-subvol=yes" : "--btrfs-subvol=no",
-                                       i->path,
+                                       i->resource->path,
                                        t->temporary_partial_path),
                                 t, i, cb, userdata);
                 break;
@@ -1446,7 +1448,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Has
                                                "--direct",          /* just download the specified URL, don't download anything else */
                                                "--verify", digest,  /* validate by explicit SHA256 sum */
                                                arg_sync ? "--sync=yes" : "--sync=no",
-                                               i->path,
+                                               i->resource->path,
                                                t->temporary_partial_path),
                                         t, i, cb, userdata);
                         break;
@@ -1464,7 +1466,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Has
                                                "--offset", offset,
                                                "--size-max", max_size,
                                                arg_sync ? "--sync=yes" : "--sync=no",
-                                               i->path,
+                                               i->resource->path,
                                                t->target.path),
                                         t, i, cb, userdata);
                         break;
@@ -1486,7 +1488,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Has
                                        "--verify", digest,  /* validate by explicit SHA256 sum */
                                        t->target.type == RESOURCE_SUBVOLUME ? "--btrfs-subvol=yes" : "--btrfs-subvol=no",
                                        arg_sync ? "--sync=yes" : "--sync=no",
-                                       i->path,
+                                       i->resource->path,
                                        t->temporary_partial_path),
                                 t, i, cb, userdata);
                 break;
@@ -1596,7 +1598,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Has
          * will do via rename(). For partition cases the only step left is to update the partition table,
          * which is done at the same place. */
 
-        log_info("Successfully acquired '%s'.", i->path);
+        log_info("Successfully acquired '%s'.", i->resource->path);
         return 0;
 }
 
@@ -1607,13 +1609,14 @@ int transfer_process_partial_and_pending_instance(Transfer *t, Instance *i) {
 
         assert(t);
         assert(i);
+        assert(i->resource);
 
-        log_debug("transfer_process_partial_and_pending_instance %s", i->path);
+        log_debug("transfer_process_partial_and_pending_instance %s", i->resource->path);
 
         /* Does this instance already exist in the target but isn’t pending? */
         existing = resource_find_instance(&t->target, i->metadata.version);
         if (existing && !existing->is_pending) {
-                log_info("Resource '%s' instance is already in the target but is not pending.", i->path);
+                log_info("Resource '%s' instance is already in the target but is not pending.", i->resource->path);
                 return 0;
         }
 
@@ -1650,7 +1653,7 @@ int transfer_install_instance(
         assert(i->resource);
         assert(i->is_pending || t == container_of(i->resource, Transfer, source));
 
-        log_debug("transfer_install_instance %s %s %s %d", i->path, t->temporary_pending_path, t->final_partition_label, t->partition_change);
+        log_debug("transfer_install_instance %s %s %s %d", i->resource->path, t->temporary_pending_path, t->final_partition_label, t->partition_change);
 
         if (t->temporary_pending_path) {
                 assert(RESOURCE_IS_FILESYSTEM(t->target.type));
@@ -1665,7 +1668,7 @@ int transfer_install_instance(
                         return log_error_errno(r, "Failed to move '%s' into place: %m", t->final_path);
 
                 log_info("Successfully installed '%s' (%s) as '%s' (%s).",
-                         i->path,
+                         i->resource->path,
                          resource_type_to_string(i->resource->type),
                          t->final_path,
                          resource_type_to_string(t->target.type));
@@ -1693,7 +1696,7 @@ int transfer_install_instance(
                         return r;
 
                 log_info("Successfully installed '%s' (%s) as '%s' (%s).",
-                         i->path,
+                         i->resource->path,
                          resource_type_to_string(i->resource->type),
                          t->partition_info.device,
                          resource_type_to_string(t->target.type));

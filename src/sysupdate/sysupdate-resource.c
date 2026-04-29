@@ -55,7 +55,6 @@ void resource_destroy(Resource *rr) {
 
 static int resource_add_instance(
                 Resource *rr,
-                const char *path,
                 const char *name,
                 const InstanceMetadata *f,
                 Instance **ret) {
@@ -64,7 +63,6 @@ static int resource_add_instance(
         int r;
 
         assert(rr);
-        assert(path);
         assert(f);
         assert(f->version);
         POINTER_MAY_BE_NULL (name);
@@ -72,7 +70,7 @@ static int resource_add_instance(
         if (!GREEDY_REALLOC(rr->instances, rr->n_instances + 1))
                 return log_oom();
 
-        r = instance_new(rr, path, f, &i);
+        r = instance_new(rr, f, &i);
         if (r < 0)
                 return r;
 
@@ -193,7 +191,7 @@ static int resource_load_from_directory_recursive(
                 if (!joined)
                         return log_oom();
 
-                r = resource_add_instance(rr, joined, rel_joined, &extracted_fields, &instance);
+                r = resource_add_instance(rr, rel_joined, &extracted_fields, &instance);
                 if (r < 0)
                         return r;
 
@@ -307,7 +305,7 @@ static int resource_load_from_blockdev(Resource *rr) {
                 if (IN_SET(r, PATTERN_MATCH_NO, PATTERN_MATCH_RETRY))
                         continue;
 
-                r = resource_add_instance(rr, pinfo.device, NULL, &extracted_fields, &instance);
+                r = resource_add_instance(rr, NULL, &extracted_fields, &instance);
                 if (r < 0)
                         return r;
 
@@ -653,7 +651,7 @@ static int resource_load_from_web(
                                 if (r < 0)
                                         return log_error_errno(r, "Failed to build instance URL: %m");
 
-                                r = resource_add_instance(rr, path, fn, &extracted_fields, &instance);
+                                r = resource_add_instance(rr, fn, &extracted_fields, &instance);
                                 if (r < 0)
                                         return r;
 
@@ -696,6 +694,8 @@ static int instance_cmp(Instance *const*a, Instance *const*b) {
         assert(b);
         assert(*a);
         assert(*b);
+        assert((*a)->resource);
+        assert((*b)->resource);
         assert((*a)->metadata.version);
         assert((*b)->metadata.version);
 
@@ -707,7 +707,7 @@ static int instance_cmp(Instance *const*a, Instance *const*b) {
         /* Instances don't have to be uniquely named (uniqueness on partition tables is not enforced at all,
          * and since we allow multiple matching patterns not even in directories they are unique). Hence
          * let's order by path as secondary ordering key. */
-        return path_compare((*a)->path, (*b)->path);
+        return path_compare((*a)->resource->path, (*b)->resource->path);
 }
 
 int resource_load_instances(Resource *rr, bool verify, Hashmap **web_cache) {

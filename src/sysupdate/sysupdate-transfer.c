@@ -750,16 +750,20 @@ static int transfer_instance_vacuum(
         assert(instance);
         assert(instance->resource);
 
+        _cleanup_free_ char *instance_path = path_join(instance->resource->path, instance->name);
+        if (!instance_path)
+                return log_oom ();
+
         switch (t->target.type) {
 
         case RESOURCE_REGULAR_FILE:
         case RESOURCE_DIRECTORY:
         case RESOURCE_SUBVOLUME:
-                r = rm_rf(instance->resource->path, REMOVE_ROOT|REMOVE_PHYSICAL|REMOVE_SUBVOLUME|REMOVE_MISSING_OK|REMOVE_CHMOD);
+                r = rm_rf(instance_path, REMOVE_ROOT|REMOVE_PHYSICAL|REMOVE_SUBVOLUME|REMOVE_MISSING_OK|REMOVE_CHMOD);
                 if (r < 0 && r != -ENOENT)
-                        return log_error_errno(r, "Failed to make room, deleting '%s' failed: %m", instance->resource->path);
+                        return log_error_errno(r, "Failed to make room, deleting '%s' failed: %m", instance_path);
 
-                (void) rmdir_parents(instance->resource->path, t->target.path);
+                (void) rmdir_parents(instance_path, t->target.path);
 
                 break;
 
@@ -830,10 +834,14 @@ int transfer_vacuum(
 
                 assert(instance->resource);
 
+                _cleanup_free_ char *instance_path = path_join(instance->resource->path, instance->name);
+                if (!instance_path)
+                        return log_oom ();
+
                 log_info("%s Removing old %s '%s' (%s).",
                          glyph(GLYPH_RECYCLING),
                          instance->is_partial ? "partial" : "pending",
-                         instance->resource->path,
+                         instance_path,
                          resource_type_to_string(instance->resource->type));
 
                 r = transfer_instance_vacuum(t, instance);
@@ -929,10 +937,14 @@ int transfer_vacuum(
 
                 assert(oldest->resource);
 
+                _cleanup_free_ char *instance_path = path_join(oldest->resource->path, oldest->name);
+                if (!instance_path)
+                        return log_oom ();
+
                 log_info("%s Removing %s '%s' (%s).",
                          glyph(GLYPH_RECYCLING),
                          space == UINT64_MAX ? "disabled" : "old",
-                         oldest->resource->path,
+                         instance_path,
                          resource_type_to_string(oldest->resource->type));
 
                 r = transfer_instance_vacuum(t, oldest);
@@ -1336,16 +1348,20 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Tra
                         return r;
         }
 
+        _cleanup_free_ char *source_instance_path = path_join(i->resource->path, i->name);
+        if (!source_instance_path)
+                return log_oom ();
+
         assert(where);
 
-        log_info("%s Acquiring %s %s %s...", glyph(GLYPH_DOWNLOAD), i->resource->path, glyph(GLYPH_ARROW_RIGHT), where);
+        log_info("%s Acquiring %s %s %s...", glyph(GLYPH_DOWNLOAD), source_instance_path, glyph(GLYPH_ARROW_RIGHT), where);
 
         if (RESOURCE_IS_URL(i->resource->type)) {
                 /* For URL sources we require the SHA256 sum to be known so that we can validate the
                  * download. */
 
                 if (!i->metadata.sha256sum_set)
-                        return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "SHA256 checksum not known for download '%s', refusing.", i->resource->path);
+                        return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "SHA256 checksum not known for download '%s', refusing.", source_instance_path);
 
                 digest = hexmem(i->metadata.sha256sum, sizeof(i->metadata.sha256sum));
                 if (!digest)
@@ -1371,7 +1387,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Tra
                                                "raw",
                                                "--direct",          /* just copy/unpack the specified file, don't do anything else */
                                                arg_sync ? "--sync=yes" : "--sync=no",
-                                               i->resource->path,
+                                               source_instance_path,
                                                t->temporary_partial_path),
                                         t, i, cb, userdata);
                         break;
@@ -1388,7 +1404,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Tra
                                                "--offset", offset,
                                                "--size-max", max_size,
                                                arg_sync ? "--sync=yes" : "--sync=no",
-                                               i->resource->path,
+                                               source_instance_path,
                                                t->target.path),
                                         t, i, cb, userdata);
                         break;
@@ -1412,7 +1428,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Tra
                                        "--direct",          /* just untar the specified file, don't do anything else */
                                        arg_sync ? "--sync=yes" : "--sync=no",
                                        t->target.type == RESOURCE_SUBVOLUME ? "--btrfs-subvol=yes" : "--btrfs-subvol=no",
-                                       i->resource->path,
+                                       source_instance_path,
                                        t->temporary_partial_path),
                                 t, i, cb, userdata);
                 break;
@@ -1429,7 +1445,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Tra
                                        "--direct",          /* just untar the specified file, don't do anything else */
                                        arg_sync ? "--sync=yes" : "--sync=no",
                                        t->target.type == RESOURCE_SUBVOLUME ? "--btrfs-subvol=yes" : "--btrfs-subvol=no",
-                                       i->resource->path,
+                                       source_instance_path,
                                        t->temporary_partial_path),
                                 t, i, cb, userdata);
                 break;
@@ -1599,7 +1615,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Tra
          * will do via rename(). For partition cases the only step left is to update the partition table,
          * which is done at the same place. */
 
-        log_info("Successfully acquired '%s'.", i->resource->path);
+        log_info("Successfully acquired '%s'.", source_path);
         return 0;
 }
 

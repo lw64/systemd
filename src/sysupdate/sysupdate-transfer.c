@@ -1611,7 +1611,7 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Has
          * will do via rename(). For partition cases the only step left is to update the partition table,
          * which is done at the same place. */
 
-        log_info("Successfully acquired '%s'.", source_path);
+        log_info("Successfully acquired '%s'.", source_instance_path);
         return 0;
 }
 

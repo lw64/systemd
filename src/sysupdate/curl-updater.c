@@ -523,11 +523,7 @@ static int vl_method_prepare_update(sd_varlink *link, sd_json_variant *json_para
         if (!FILE_SIZE_VALID(size)) /* is this the right check here? */
                 return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE), "Size of file is invalid");
 
-        _cleanup_close_ int memfd = memfd_new("enhanced_blob");
-        if (memfd < 0)
-                return log_error_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE), "Couldn't create memfd");
-
-        int enhanced_blob_fd_idx = sd_varlink_push_dup_fd (link, memfd);
+        int enhanced_blob_fd_idx = sd_varlink_push_dup_fd (link, p.blob_fd);
         if (enhanced_blob_fd_idx < 0)
                 return log_error_errno(enhanced_blob_fd_idx, "Failed to push userns fd into varlink connection: %m");
 

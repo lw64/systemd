@@ -232,6 +232,8 @@ EOF
         mkdir -p "$d"
     done
 
+    python3 -m http.server -d "$WORKDIR/source" 8000 &
+
     cat >"$CONFIGDIR/01-first.transfer" <<EOF
 [Source]
 Type=regular-file
@@ -473,7 +475,7 @@ EOF
     cat >"$CONFIGDIR/02-second.transfer" <<EOF
 [Source]
 Type=url-file
-Path=file://$WORKDIR/source
+Path=http://localhost:8000
 MatchPattern=part2-@v.raw.gz
 
 [Target]

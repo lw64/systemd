@@ -6,6 +6,7 @@
 #include "fd-util.h"
 #include "json-util.h"
 #include "io-util.h"
+#include "iovec-util.h"
 #include "import-common.h"
 #include "hexdecoct.h"
 #include "log.h"
@@ -88,7 +89,6 @@ static int pull_file(MethodPullParameters *parameters, bool header_only) {
         r = curl_glue_new(&glue, parameters->event);
         if (r < 0)
                 return r;
-        glue->on_finished = pull_job_curl_on_finished;
 
         pull_job_new (&parameters->job, parameters->source, TAKE_PTR(glue), /* userdata= */ parameters);
 

@@ -38,13 +38,9 @@ executables += [
                 'sources' : files(
                         'pull-job-service.c',
                         'pull-job.c',
-                        'curl-util.c',
                 ),
                 'objects' : ['systemd-importd'],
-                'link_with' : [libcurlutil_static, libshared],
-                'dependencies' : common_deps + [
-                        libopenssl,
-                ],
+                'dependencies' : libopenssl_cflags,
         },
         libexec_template + {
                 'name' : 'systemd-import',

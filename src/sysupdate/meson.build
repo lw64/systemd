@@ -58,14 +58,9 @@ executables += [
                 'sources' : systemd_curl_updater_sources,
                 'objects' : ['systemd-importd', 'systemd-sysupdate'],
                 'conditions' : ['ENABLE_SYSUPDATED'],
-                'link_with' : [
-                        libshared,
-                        libshared_fdisk,
-                ],
                 'dependencies' : common_deps + [
-                        libfdisk,
-                        libopenssl,
-                        threads,
+                        libfdisk_cflags,
+                        libopenssl_cflags,
                 ],
         },
 ]

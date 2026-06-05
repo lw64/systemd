@@ -23,8 +23,6 @@ typedef struct InstanceMetadata {
         int no_auto;
         int read_only;
         int growfs;
-        uint8_t sha256sum[32];             /* SHA256 sum of the download (i.e. compressed) file */
-        bool sha256sum_set;
 } InstanceMetadata;
 
 #define INSTANCE_METADATA_NULL                  \

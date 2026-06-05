@@ -655,12 +655,6 @@ static int resource_load_from_web(
                                 if (r < 0)
                                         return r;
 
-                                //assert(h.iov_len == sizeof(instance->metadata.sha256sum));
-                                //assert(!instance->metadata.sha256sum_set);
-
-                                //memcpy(instance->metadata.sha256sum, h.iov_base, h.iov_len);
-                                //instance->metadata.sha256sum_set = true;
-
                                 /* Web resources can only be a source, not a target, so
                                  * can never be partial or pending. */
                                 instance->is_partial = false;

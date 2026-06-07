@@ -7,11 +7,54 @@
 #include "sysupdate-partition.h"
 #include "sysupdate-resource.h"
 
+typedef enum TransferType {
+        TRANSFER_PARTITION,
+        TRANSFER_FILESYSTEM,
+} TransferType;
+
 typedef struct Transfer {
         char *id;
 
         char *min_version;
         char **protected_versions;
+
+        TransferType type;
+
+        union {
+                struct {
+                        TargetResource target;
+
+                        /* When creating a new partition/file, optionally override these attributes explicitly */
+                        sd_id128_t partition_uuid;
+                        bool partition_uuid_set;
+                        uint64_t partition_flags;
+                        bool partition_flags_set;
+
+                        /* If we write to a partition in a partition table, the metrics of it */
+                        PartitionInfo partition_info;
+                        PartitionChange partition_change;
+                        char *final_partition_label;
+
+                        /* Derived partition type UUIDs used to indicate partial/pending state on the partition type level,
+                         * instead of polluting the partition label with prefixes */
+                        sd_id128_t partition_type_partial;
+                        sd_id128_t partition_type_pending;
+                } partition;
+
+                struct {
+                        TargetResource target;
+
+                        mode_t mode;
+
+                        /* If we create a new file/dir/subvol in the fs, the temporary and final path we create it under,
+                         * as well as the read-only flag for it */
+                        char *temporary_partial_path;
+                        char *temporary_pending_path;
+                        char *final_path;
+                        int install_read_only;
+                } filesystem;
+        };
+
         char *current_symlink;
         bool verify;
 
@@ -19,7 +62,7 @@ typedef struct Transfer {
         char **requisite_features;
         bool enabled;
 
-        Resource source, target;
+        SourceResource source;
 
         uint64_t instances_max;
         bool remove_temporary;
@@ -28,31 +71,10 @@ typedef struct Transfer {
         char **appstream;
 
         /* When creating a new partition/file, optionally override these attributes explicitly */
-        sd_id128_t partition_uuid;
-        bool partition_uuid_set;
-        uint64_t partition_flags;
-        bool partition_flags_set;
-        mode_t mode;
         uint64_t tries_left, tries_done;
         int no_auto;
         int read_only;
         int growfs;
-
-        /* If we create a new file/dir/subvol in the fs, the temporary and final path we create it under, as well as the read-only flag for it */
-        char *temporary_partial_path;
-        char *temporary_pending_path;
-        char *final_path;
-        int install_read_only;
-
-        /* If we write to a partition in a partition table, the metrics of it */
-        PartitionInfo partition_info;
-        PartitionChange partition_change;
-        char *final_partition_label;
-
-        /* Derived partition type UUIDs used to indicate partial/pending state on the partition type level,
-         * instead of polluting the partition label with prefixes */
-        sd_id128_t partition_type_partial;
-        sd_id128_t partition_type_pending;
 
         Context *context;
 } Transfer;

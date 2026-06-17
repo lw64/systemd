@@ -4,18 +4,23 @@
 #include "gpt.h"
 #include "sysupdate-forward.h"
 
-typedef enum ResourceType {
-        RESOURCE_URL_FILE,
-        RESOURCE_URL_TAR,
-        RESOURCE_TAR,
-        RESOURCE_PARTITION,
-        RESOURCE_REGULAR_FILE,
-        RESOURCE_DIRECTORY,
-        RESOURCE_SUBVOLUME,
-        _RESOURCE_TYPE_MAX,
-        _RESOURCE_TYPE_INVALID = -EINVAL,
-} ResourceType;
+typedef enum SourceType {
+        SOURCE_URL_FILE,
+        SOURCE_URL_TAR,
+        SOURCE_URL_DIRECTORY,
+        _SOURCE_TYPE_MAX,
+        _SOURCE_TYPE_INVALID = -EINVAL,
+} SourceType;
 
+typedef enum TargetType {
+        TARGET_PARTITION,
+        TARGET_REGULAR_FILE,
+        TARGET_DIRECTORY,
+        TARGET_SUBVOLUME,
+        TARGET_TYPE_MAX,
+        _TARGET_TYPE_INVALID = -EINVAL,
+} TargetType;
+#if 0
 static inline bool RESOURCE_IS_SOURCE(ResourceType t) {
         return IN_SET(t,
                       RESOURCE_URL_FILE,
@@ -55,7 +60,7 @@ static inline bool RESOURCE_IS_URL(ResourceType t) {
                       RESOURCE_URL_TAR,
                       RESOURCE_URL_FILE);
 }
-
+#endif
 typedef enum PathRelativeTo {
         /* Please make sure to follow the naming of the corresponding PartitionDesignator enum values,
          * where this makes sense, like for the following three. */
@@ -68,24 +73,45 @@ typedef enum PathRelativeTo {
         _PATH_RELATIVE_TO_INVALID = -EINVAL,
 } PathRelativeTo;
 
-typedef struct Resource {
-        ResourceType type;
+typedef struct SourceResource {
+        SourceType type;
 
         /* Where to look for instances, and what to match precisely */
-        char *path;
-        bool path_auto; /* automatically find root path (only available if target resource, not source resource) */
-        PathRelativeTo path_relative_to;
+        char *url;
         char **patterns;
-        GptPartitionType partition_type;
-        bool partition_type_set;
 
         /* All instances of this resource we found */
         Instance **instances;
         size_t n_instances;
+} SourceResource;
 
-        /* If this is a partition resource (RESOURCE_PARTITION), then how many partition slots are currently unassigned, that we can use */
-        size_t n_empty;
-} Resource;
+typedef struct TargetResource {
+        TargetType type;
+
+        union {
+                struct {
+                        bool path_auto; /* automatically find root path */
+                        GptPartitionType partition_type;
+                        bool partition_type_set;
+
+                        /* how many partition slots are currently unassigned, that we can use */
+                        size_t n_empty;
+                } partition;
+
+                struct {
+                        PathRelativeTo path_relative_to;
+
+                } filesystem;
+        };
+
+        /* Where to look for instances, and what to match precisely */
+        char *path;
+        char **patterns;
+
+        /* All instances of this resource we found */
+        Instance **instances;
+        size_t n_instances;
+} TargetResource;
 
 void resource_destroy(Resource *rr);
 

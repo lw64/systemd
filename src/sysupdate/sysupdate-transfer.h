@@ -19,7 +19,8 @@ typedef struct Transfer {
         char **requisite_features;
         bool enabled;
 
-        Resource source, target;
+        SourceResource source;
+        TargetResource target;
 
         uint64_t instances_max;
         bool remove_temporary;

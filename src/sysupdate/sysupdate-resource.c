@@ -618,8 +618,10 @@ static int instance_cmp(Instance *const*a, Instance *const*b) {
         assert(b);
         assert(*a);
         assert(*b);
-        assert((*a)->resource);
-        assert((*b)->resource);
+        //assert((*a)->resource);
+        //assert((*b)->resource);
+        assert(a->name);
+        assert(b->name);
         assert((*a)->metadata.version);
         assert((*b)->metadata.version);
 
@@ -631,7 +633,7 @@ static int instance_cmp(Instance *const*a, Instance *const*b) {
         /* Instances don't have to be uniquely named (uniqueness on partition tables is not enforced at all,
          * and since we allow multiple matching patterns not even in directories they are unique). Hence
          * let's order by path as secondary ordering key. */
-        return path_compare((*a)->resource->path, (*b)->resource->path);
+        return path_compare(a->name, b->name);
 }
 
 int resource_load_instances(Resource *rr, bool verify, Hashmap **web_cache) {

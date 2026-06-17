@@ -7,6 +7,7 @@
 
 typedef struct Context Context;
 typedef struct PartitionInfo PartitionInfo;
-typedef struct Resource Resource;
+typedef struct SourceResource SourceResource;
+typedef struct TargetResource TargetResource;
 typedef struct Instance Instance;
 typedef struct InstanceMetadata InstanceMetadata;

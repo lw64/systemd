@@ -10,14 +10,15 @@ void instance_metadata_destroy(InstanceMetadata *m) {
 }
 
 int instance_new(
-                Resource *rr,
+                SourceResource *sr,
+                TargetResource *tr,
                 const InstanceMetadata *f,
                 Instance **ret) {
 
         _cleanup_(instance_freep) Instance *i = NULL;
         _cleanup_free_ char *p = NULL, *v = NULL;
 
-        assert(rr);
+        assert(sr || tr);
         assert(f);
         assert(f->version);
         assert(ret);
@@ -31,10 +32,14 @@ int instance_new(
                 return log_oom();
 
         *i = (Instance) {
-                .resource = rr,
                 .metadata = *f,
                 .partition_info = PARTITION_INFO_NULL,
         };
+
+        if (sr)
+                i->source_resource = sr;
+        else
+                i->target_resource = tr;
 
         i->metadata.version = TAKE_PTR(v);
 

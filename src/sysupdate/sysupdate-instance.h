@@ -10,17 +10,27 @@ typedef struct InstanceMetadata {
         /* Various bits of metadata for each instance, that is either derived from the filename/GPT label or
          * from metadata of the file/partition itself */
         char *version;
-        sd_id128_t partition_uuid;
-        bool partition_uuid_set;
-        uint64_t partition_flags;          /* GPT partition flags */
-        bool partition_flags_set;
-        usec_t mtime;
-        mode_t mode;
+
+        //union {
+                //struct {
+                        sd_id128_t partition_uuid;
+                        bool partition_uuid_set;
+                        uint64_t partition_flags;          /* GPT partition flags */
+                        bool partition_flags_set;
+
+                        int no_auto;
+                        int read_only;
+                        int growfs;
+                //} partition;
+
+                //struct {
+                        usec_t mtime;
+                        mode_t mode;
+                //} filesystem;
+        //};
+
         uint64_t size;                     /* uncompressed size of the file */
         uint64_t tries_done, tries_left;   /* for boot assessment counters */
-        int no_auto;
-        int read_only;
-        int growfs;
         uint8_t sha256sum[32];             /* SHA256 sum of the download (i.e. compressed) file */
         bool sha256sum_set;
 } InstanceMetadata;
@@ -39,7 +49,10 @@ typedef struct InstanceMetadata {
 
 struct Instance {
         /* A pointer back to the resource this belongs to */
-        Resource *resource;
+        union {
+                SourceResource *source_resource;
+                TargetResource *target_resource;
+        };
 
         /* Metadata of this version */
         InstanceMetadata metadata;
@@ -54,7 +67,8 @@ struct Instance {
 
 void instance_metadata_destroy(InstanceMetadata *m);
 
-int instance_new(Resource *rr, const InstanceMetadata *f, Instance **ret);
+// either sr or tr is set, the other is NULL
+int instance_new(SourceResource *sr, TargetResource *tr, const InstanceMetadata *f, Instance **ret);
 Instance *instance_free(Instance *i);
 
 DEFINE_TRIVIAL_CLEANUP_FUNC(Instance*, instance_free);

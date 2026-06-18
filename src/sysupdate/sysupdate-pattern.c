@@ -405,15 +405,17 @@ int pattern_match(const char *pattern, const char *s, InstanceMetadata *ret) {
 
                         log_once(LOG_WARNING, "@h pattern matching has been removed. It matches any hash string with the correct length now.");
 
-                        if (strlen(t) != 64)
+                        if (strlen(t) != sizeof(found.sha256sum) * 2)
                                 goto nope;
 
-                        r = unhexmem_full(t, 64, /* secure= */ false, &d, &l);
+                        r = unhexmem_full(t, sizeof(found.sha256sum) * 2, /* secure= */ false, &d, &l);
                         if (r == -ENOMEM)
                                 return r;
                         if (r < 0)
                                 goto nope;
 
+                        assert(!found.sha256sum_set);
+                        assert(l == sizeof(found.sha256sum));
                         break;
                 }
 
@@ -622,8 +624,19 @@ int pattern_format(
                         break;
 
                 case PATTERN_SHA256SUM: {
-                        log_once(LOG_WARNING, "'@h' is not supported anymore.");
-                        return -ENXIO;
+                        _cleanup_free_ char *h = NULL;
+
+                        if (!fields->sha256sum_set)
+                                return -ENXIO;
+
+                        h = hexmem(fields->sha256sum, sizeof(fields->sha256sum));
+                        if (!h)
+                                return -ENOMEM;
+
+                        if (!strextend(&j, h))
+                                return -ENOMEM;
+
+                        break;
                 }
 
                 default:

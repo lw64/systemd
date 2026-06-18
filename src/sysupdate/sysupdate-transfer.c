@@ -982,7 +982,10 @@ static void compile_pattern_fields(
                 .no_auto = t->no_auto >= 0 ? t->no_auto : i->metadata.no_auto,
                 .read_only = t->read_only >= 0 ? t->read_only : i->metadata.read_only,
                 .growfs = t->growfs >= 0 ? t->growfs : i->metadata.growfs,
+                .sha256sum_set = i->metadata.sha256sum_set,
         };
+
+        memcpy(ret->sha256sum, i->metadata.sha256sum, sizeof(ret->sha256sum));
 }
 
 typedef struct CalloutContext {
@@ -1351,6 +1354,18 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Has
                 log_info("Download for '%s' is %lu bytes big.", source_instance_path, i->metadata.size);
 
         log_info("%s Acquiring %s %s %s...", glyph(GLYPH_DOWNLOAD), source_instance_path, glyph(GLYPH_ARROW_RIGHT), where);
+
+        if (RESOURCE_IS_URL(i->resource->type)) {
+                /* For URL sources we require the SHA256 sum to be known so that we can validate the
+                 * download. */
+
+                //if (!i->metadata.sha256sum_set)
+                //        return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "SHA256 checksum not known for download '%s', refusing.", source_instance_path);
+
+                digest = hexmem(i->metadata.sha256sum, sizeof(i->metadata.sha256sum));
+                if (!digest)
+                        return log_oom();
+        }
 
         switch (i->resource->type) { /* Source */
 

@@ -423,13 +423,13 @@ static int download_manifest(
 }
 
 static int process_magic_file(
-                const char *fn) {//,
-                //const struct iovec *hash) {
+                const char *fn,
+                const struct iovec *hash) {
 
         int r;
 
         assert(fn);
-        //assert(iovec_is_set(hash));
+        assert(iovec_is_set(hash));
 
         /* Validates "BEST-BEFORE-*" magic files we find in SHA256SUMS manifests. For now we ignore the
          * contents of such files (which might change one day), and only look at the file name.
@@ -442,16 +442,16 @@ static int process_magic_file(
                 return 0;
 
         /* SHA256 hash of an empty file */
-        //static const uint8_t expected_hash[] = {
-        //        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
-        //        0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
-        //};
+        static const uint8_t expected_hash[] = {
+                0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
+                0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
+        };
 
         /* Even if we ignore if people have non-empty files for this file, let's nonetheless warn about it,
          * so that people fix it. After all we want to retain liberty to maybe one day place some useful data
          * inside it */
-        //if (!iovec_equal(&IOVEC_MAKE(expected_hash, sizeof(expected_hash)), hash))
-        //        log_warning("Hash of best before marker file '%s' has unexpected value, proceeding anyway.", fn);
+        if (!iovec_equal(&IOVEC_MAKE(expected_hash, sizeof(expected_hash)), hash))
+                log_warning("Hash of best before marker file '%s' has unexpected value, proceeding anyway.", fn);
 
         usec_t best_before;
         r = parse_calendar_date(e, &best_before);
@@ -635,7 +635,7 @@ static int resource_load_from_web(
                 if (string_has_cc(fn, NULL))
                         return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Filename contains control characters at manifest line %zu, refusing.", line_nr);
 
-                r = process_magic_file(fn);//, &h);
+                r = process_magic_file(fn, &h);
                 if (r < 0)
                         return r;
                 if (r == 0) {
@@ -655,11 +655,11 @@ static int resource_load_from_web(
                                 if (r < 0)
                                         return r;
 
-                                //assert(h.iov_len == sizeof(instance->metadata.sha256sum));
-                                //assert(!instance->metadata.sha256sum_set);
+                                assert(h.iov_len == sizeof(instance->metadata.sha256sum));
+                                assert(!instance->metadata.sha256sum_set);
 
-                                //memcpy(instance->metadata.sha256sum, h.iov_base, h.iov_len);
-                                //instance->metadata.sha256sum_set = true;
+                                memcpy(instance->metadata.sha256sum, h.iov_base, h.iov_len);
+                                instance->metadata.sha256sum_set = true;
 
                                 /* Web resources can only be a source, not a target, so
                                  * can never be partial or pending. */

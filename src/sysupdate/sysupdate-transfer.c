@@ -1359,8 +1359,8 @@ int transfer_acquire_instance(Transfer *t, Instance *i, InstanceMetadata *f, Has
                 /* For URL sources we require the SHA256 sum to be known so that we can validate the
                  * download. */
 
-                //if (!i->metadata.sha256sum_set)
-                //        return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "SHA256 checksum not known for download '%s', refusing.", source_instance_path);
+                if (!i->metadata.sha256sum_set)
+                        return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "SHA256 checksum not known for download '%s', refusing.", source_instance_path);
 
                 digest = hexmem(i->metadata.sha256sum, sizeof(i->metadata.sha256sum));
                 if (!digest)

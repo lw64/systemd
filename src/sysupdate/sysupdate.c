@@ -765,6 +765,9 @@ static int context_show_version(Context *c, const char *version) {
                         continue;
                 }
 
+                Resource *rr;
+                if (FLAGS_SET(us->flags, UPDATE_AVAILABLE))
+                        rr = t
                 assert(i->resource);
 
                 r = table_add_many(t,

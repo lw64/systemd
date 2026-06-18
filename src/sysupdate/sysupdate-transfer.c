@@ -747,10 +747,11 @@ static int transfer_instance_vacuum(
         int r;
 
         assert(t);
+        //assert(t->target);
+        assert(t->target.path);
         assert(instance);
-        assert(instance->resource);
 
-        _cleanup_free_ char *instance_path = path_join(instance->resource->path, instance->name);
+        _cleanup_free_ char *instance_path = path_join(t->target.path, instance->name);
         if (!instance_path)
                 return log_oom ();
 
@@ -832,9 +833,9 @@ int transfer_vacuum(
                         continue;
                 }
 
-                assert(instance->resource);
+                //assert(instance->resource);
 
-                _cleanup_free_ char *instance_path = path_join(instance->resource->path, instance->name);
+                _cleanup_free_ char *instance_path = path_join(t->target.path, instance->name);
                 if (!instance_path)
                         return log_oom ();
 
@@ -842,7 +843,7 @@ int transfer_vacuum(
                          glyph(GLYPH_RECYCLING),
                          instance->is_partial ? "partial" : "pending",
                          instance_path,
-                         resource_type_to_string(instance->resource->type));
+                         resource_type_to_string(t->target.type));
 
                 r = transfer_instance_vacuum(t, instance);
                 if (r < 0)
@@ -935,9 +936,9 @@ int transfer_vacuum(
                 if (!oldest) /* Nothing more to remove */
                         break;
 
-                assert(oldest->resource);
+                //assert(oldest->resource);
 
-                _cleanup_free_ char *instance_path = path_join(oldest->resource->path, oldest->name);
+                _cleanup_free_ char *instance_path = path_join(t->target.path, oldest->name);
                 if (!instance_path)
                         return log_oom ();
 
@@ -945,7 +946,7 @@ int transfer_vacuum(
                          glyph(GLYPH_RECYCLING),
                          space == UINT64_MAX ? "disabled" : "old",
                          instance_path,
-                         resource_type_to_string(oldest->resource->type));
+                         resource_type_to_string(t->target.type));
 
                 r = transfer_instance_vacuum(t, oldest);
                 if (r < 0)
@@ -980,7 +981,7 @@ static void compile_pattern_fields(
                 .partition_uuid_set = t->partition_uuid_set || i->metadata.partition_uuid_set,
                 .partition_flags = t->partition_flags_set ? t->partition_flags : i->metadata.partition_flags,
                 .partition_flags_set = t->partition_flags_set || i->metadata.partition_flags_set,
-                .mtime = RESOURCE_IS_TAR(i->resource->type) ? USEC_INFINITY : i->metadata.mtime,
+                .mtime = RESOURCE_IS_TAR(t->target.type) ? USEC_INFINITY : i->metadata.mtime,
                 .mode = t->mode != MODE_INVALID ? t->mode : (RESOURCE_IS_TAR(i->resource->type) ? MODE_INVALID : i->metadata.mode),
                 .size = i->metadata.size,
                 .tries_done = t->tries_done != UINT64_MAX ? t->tries_done :

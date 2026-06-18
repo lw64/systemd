@@ -9,6 +9,7 @@ typedef struct UpdateSet {
         char *version;
         Instance **instances;
         size_t n_instances;
+        bool available;
 } UpdateSet;
 
 UpdateSet* update_set_free(UpdateSet *us);

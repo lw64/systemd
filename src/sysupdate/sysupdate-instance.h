@@ -38,9 +38,6 @@ typedef struct InstanceMetadata {
         }
 
 struct Instance {
-        /* A pointer back to the resource this belongs to */
-        Resource *resource;
-
         /* Metadata of this version */
         InstanceMetadata metadata;
 
